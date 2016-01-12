@@ -1,0 +1,48 @@
+
+XVariance variance;
+  
+for(XEchoIndex i_echo=0; i_echo<mls.NEcho(); i_echo=i_echo+1400)
+{
+
+ if(count%1000==0){ // Enregistre dans le LiteShape 1 ellipse tous les 100
+            
+            Eigen::Matrix3d covariance=mls.Uncertainty(i_echo,variance);
+
+           // cout <<covariance <<endl;
+            Eigen::EigenSolver<Eigen::Matrix3d> eigensolver(covariance); // diagonalise la matrice de variance covariance
+
+    ////        //-------------------Valeurs propres de la matrice de covariance C_x-------------------//
+
+            double l0 = real(eigensolver.eigenvalues()[0]);
+            double l1 = real(eigensolver.eigenvalues()[1]);
+            double l2 = real(eigensolver.eigenvalues()[2]);
+
+           // cout <<"\n Valeurs propres : " <<l0 <<"," <<l1<<","<<l2 <<endl;
+
+    ////        //-------------------Vecteurs propres de la matrice de covariance C_x-------------------//
+
+           Lg::Point3d v0(real(eigensolver.eigenvectors()(0,0)),real(eigensolver.eigenvectors()(1,0)),real(eigensolver.eigenvectors()(2,0)));
+           Lg::Point3d v1(real(eigensolver.eigenvectors()(0,1)),real(eigensolver.eigenvectors()(1,1)),real(eigensolver.eigenvectors()(2,1)));
+           Lg::Point3d v2(real(eigensolver.eigenvectors()(0,2)),real(eigensolver.eigenvectors()(1,2)),real(eigensolver.eigenvectors()(2,2)));
+
+        //   cout <<"\n Vecteurs propres : \n " <<v0 <<"," <<v1<<","<<v2 <<endl;
+           double scale = sqrt(11.345); // Mulitplication par khi2
+
+           v0 *= scale * l0;
+           v1 *= scale * l1;
+           v2 *= scale * l2;
+
+           XPt3D Pt_ground = mls.Pworld(i_echo);
+           XPt3D Pt_center = mls.Cworld(i_echo);
+
+           boost::shared_ptr<shape3d_segment> d1=boost::shared_ptr<shape3d_segment>(new shape3d_segment(Pt_center.X,Pt_center.Y,Pt_center.Z,Pt_ground.X,Pt_ground.Y,Pt_ground.Z," "));
+           toto2.addShape(d1);
+
+           toto2.addShape(boost::shared_ptr<shape3d>(new shape3d_ellipsoide(Pt_ground.X,Pt_ground.Y,Pt_ground.Z,
+                                                                            v0[0],v0[1],v0[2],
+                                                                            v1[0],v1[1],v1[2],
+                                                                            v2[0],v2[1],v2[2]," ")));
+
+
+
+}
