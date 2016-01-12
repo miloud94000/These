@@ -1,0 +1,1020 @@
+#include <algorithm>    // std::find
+#include <lib3ds/file.h>
+#include <lib3ds/mesh.h>
+#include <lib3ds/node.h>
+//#include <lib3ds/camera.h>
+#include <lib3ds/material.h>
+#include <lib3ds/matrix.h>
+#include <lib3ds/vector.h>
+//#include <lib3ds/light.h>
+#include <cmath>
+#include "tinyxml.h"
+#include "LgPoint2.hpp"
+#include "LgPoint3.hpp"
+#include <LgLine2.hpp>
+#include "opencv/highgui.h"
+#include <iostream>   // std::cout
+#include <string>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <fstream>
+#include <CGAL/Point_2.h>
+#include <CGAL/Vector_2.h>
+#include <CGAL/Point_2.h>
+#include <CGAL/Triangle_2.h>
+#include <CGAL/Bbox_2.h>
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Boolean_set_operations_2.h>
+#include <list>
+#include <CGAL/Cartesian.h>
+#include <CGAL/minkowski_sum_2.h>
+#include <iostream>
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Boolean_set_operations_2.h>
+#include <CGAL/Polygon_set_2.h>
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Boolean_set_operations_2.h>
+#include <CGAL/Polygon_2.h>
+#include <CGAL/Small_side_angle_bisector_decomposition_2.h>
+//struct Kernel : public CGAL::Exact_predicates_exact_constructions_kernel {};
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+
+
+
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Polygon_2.h>
+#include <CGAL/Polygon_with_holes_2.h>
+#include <CGAL/Polygon_set_2.h>
+#include <list>
+#include <set>
+#include <CGAL/Cartesian.h>
+#include <CGAL/MP_Float.h>
+#include <CGAL/Quotient.h>
+#include <CGAL/Arr_segment_traits_2.h>
+#include <CGAL/Arrangement_2.h>
+typedef CGAL::Quotient<CGAL::MP_Float> Number_type;
+typedef CGAL::Cartesian<Number_type> Kernel;
+typedef CGAL::Arr_segment_traits_2<Kernel> Traits_2;
+typedef Traits_2::Point_2 Point_2;
+typedef Traits_2::X_monotone_curve_2 Segment_2;
+typedef CGAL::Arrangement_2<Traits_2> Arrangement_2;
+typedef CGAL::Polygon_2<Kernel>                           Polygon_2;
+typedef Arrangement_2::Ccb_halfedge_circulator    Ccb_halfedge_circulator;
+typedef Arrangement_2::Ccb_halfedge_const_circulator   Ccb_halfedge_const_circulator;
+typedef Polygon_2::iterator Iterator;
+typedef Polygon_2::Vertex_iterator VertexIterator;
+using namespace std;
+
+float dx=0.f, dy=0.f, dz=0.f;
+
+struct MyFace{
+    uint16_t a, b, c;
+};
+template<class Kernel, class Container>
+void print_polygon (const CGAL::Polygon_2<Kernel, Container>& P)
+{
+  typename CGAL::Polygon_2<Kernel, Container>::Vertex_const_iterator vit;
+  std::cout << "[ " << P.size() << " vertices:";
+  for (vit = P.vertices_begin(); vit != P.vertices_end(); ++vit)
+    std::cout << " (" << *vit << ')';
+  std::cout << " ]" << std::endl;
+}
+
+template<class Kernel, class Container>
+void print_polygon_with_holes(const CGAL::Polygon_with_holes_2<Kernel, Container> & pwh)
+{
+  if (! pwh.is_unbounded()) {
+    std::cout << "{ Outer boundary = ";
+    print_polygon (pwh.outer_boundary());
+  } else
+    std::cout << "{ Unbounded polygon." << std::endl;
+  typename CGAL::Polygon_with_holes_2<Kernel,Container>::Hole_const_iterator hit;
+  unsigned int k = 1;
+  std::cout << " " << pwh.number_of_holes() << " holes:" << std::endl;
+  for (hit = pwh.holes_begin(); hit != pwh.holes_end(); ++hit, ++k) {
+    std::cout << " Hole #" << k << " = ";
+    print_polygon (*hit);
+  }
+  std::cout << " }" << std::endl;
+}
+struct MyMesh
+{
+    string name;
+    string nameBC;
+    string nameBS;
+    vector<Lg::Point3> pt;
+    vector<Lg::Point2> uv;
+    vector<MyFace> face;
+    Lg::Point2 segment2D;
+    uint16_t first_id;
+    Segment_2 cv[4];
+    Polygon_2 polygonSegment;
+};
+
+
+
+
+
+class BatimentSimple
+{
+
+public :
+
+    string nameBatimentSimple;
+    string nameBatimentComposite;
+    vector<MyMesh> v_mesh;
+
+};
+struct BatimentComposite{
+
+    string nameBC;
+    vector<BatimentSimple> v_batimentSimple;
+    vector<BatimentComposite> v_BatimentCompositeVoisins;
+
+};
+
+struct BlocBatimentComposite{
+
+    vector<BatimentComposite> v_BatimentComposite;
+
+};
+
+MyMesh CreateMesh(Lib3dsMesh *mesh, string nameBC,string nameBS){
+
+    MyMesh my_mesh;
+
+    std::string name(mesh->name);
+    my_mesh.name = name;
+    my_mesh.nameBC=nameBC;
+    my_mesh.nameBS=nameBS;
+    //cout<< "Numéro du Batiment composite : " <<my_mesh.nameBC<< endl;
+    //cout<< "Numéro du Batiment simple : " <<my_mesh.nameBS<< endl;
+    //cout<< "Nom du mesh : " <<my_mesh.name<< endl;
+    //cout<< "First id du mesh :"<<my_mesh.first_id<< endl;
+
+    for (int i=0; i<mesh->faces; ++i)
+    {
+        MyFace f;
+        f.a = mesh->faceL[i].points[0];
+        f.b = mesh->faceL[i].points[1];
+        f.c = mesh->faceL[i].points[2];
+        my_mesh.face.push_back(f);
+
+       //cout <<"Le triangle "<< i<<" est composé des points :" <<my_mesh.face[i].a<<","<<my_mesh.face[i].b<<","<<my_mesh.face[i].c << endl;
+    }
+
+    for (int i=0; i<mesh->points; ++i)
+    {
+        Lg::Point3 p;
+        p.x() = mesh->pointL[i].pos[0]+dx;
+        p.y() = mesh->pointL[i].pos[1]+dy;
+        p.z() = mesh->pointL[i].pos[2]+dz;
+
+        my_mesh.pt.push_back(p);
+        //cout<< "Point "<< i <<" :"<< my_mesh.pt[i]<< endl;
+    }
+
+
+    double distance_max=0;
+    Lg::Point2 indice;
+    for (int i=0; i<mesh->points;++i){
+
+        for(int j=i+1; j<mesh->points;++j){
+
+            Lg::Point3 vec=my_mesh.pt[i]-my_mesh.pt[j];
+            vec.z()=0;
+            double distance=vec.Norm();
+
+            if(distance>distance_max){
+                distance_max=distance;
+                indice.x()=i;
+                indice.y()=j;
+            }
+
+        }
+
+    }
+
+
+    my_mesh.segment2D=indice;
+
+   Lg::Point3 A=my_mesh.pt[indice.x()];
+   Lg::Point3 B=my_mesh.pt[indice.y()];
+
+   A.z()=0;
+   B.z()=0;
+
+   Lg::Point3 vecteurAB=B-A;
+
+   Lg::Point3 vec_unitaire_x=(vecteurAB/vecteurAB.Norm())*0.01;
+
+   Lg::Point3 vec_unitaire_y;
+
+   vec_unitaire_y.x()=-vec_unitaire_x.y();
+   vec_unitaire_y.y()=vec_unitaire_x.x();
+
+
+
+
+   Lg::Point3 point1=A-vec_unitaire_x+vec_unitaire_y;
+   Lg::Point3 point2=A-vec_unitaire_x-vec_unitaire_y;
+
+   Lg::Point3 point3=B+vec_unitaire_x-vec_unitaire_y;
+   Lg::Point3 point4=B+vec_unitaire_x+vec_unitaire_y;
+
+
+   Point_2 p1 (point1.x(), point1.y());
+   Point_2 p2 (point2.x(), point2.y());
+   Point_2 p3 (point3.x(), point3.y());
+   Point_2 p4 (point4.x(), point4.y());
+
+
+
+   my_mesh.polygonSegment.push_back(p1);
+   my_mesh.polygonSegment.push_back(p2);
+   my_mesh.polygonSegment.push_back(p3);
+   my_mesh.polygonSegment.push_back(p4);
+
+   if(! my_mesh.polygonSegment.is_counterclockwise_oriented()){
+       cout << "Attention"<< endl;
+        my_mesh.polygonSegment.reverse_orientation();
+   }
+
+   if(!my_mesh.polygonSegment.is_simple()) cout<<"attention" <<endl;
+
+   my_mesh.cv[0] = Segment_2 (p1, p2);
+   my_mesh.cv[1] = Segment_2 (p2, p3);
+   my_mesh.cv[2] = Segment_2 (p3, p4);
+   my_mesh.cv[3]= Segment_2 (p4,p1);
+
+   // cout<<"Polygon simple : "   <<my_mesh.polygonSegment.is_simple() <<endl;
+
+  // cout<<"Point 1 : "<< point1<<endl;
+   //cout<<"Point 2 : "<< point2<<endl;
+   //cout<<"Point 3 : "<< point3<<endl;
+  // cout<<"Point 4 : "<< point4<<endl;
+
+    //cout<< "Segment 2D : "<<my_mesh.segment2D<< endl;
+
+
+    for (int i=0; i<mesh->texels; ++i)
+    {
+        Lg::Point2 uv;
+        uv.x() = mesh->texelL[i][0];
+        uv.y() = mesh->texelL[i][1];
+        my_mesh.uv.push_back(uv);
+    }
+
+
+    return my_mesh;
+
+}
+
+void MeshNode(Lib3dsFile *f, Lib3dsNode *node, vector<MyMesh> & v_mesh)
+{
+    Lib3dsNode *p;
+    //cout <<node->node_id<<endl;
+    for (p=node->childs; p!=0; p=p->next){
+        MeshNode(f, p, v_mesh);
+    }
+
+    Lib3dsMesh *mesh=lib3ds_file_mesh_by_name(f,node->name);
+
+    if(!mesh) return;
+    if(mesh->name[0]=='F'){
+        string nameBC=node->parent->parent->parent->name;
+        string nameBS=node->parent->parent->name;
+
+        v_mesh.push_back(CreateMesh(mesh,nameBC,nameBS));
+
+    }
+}
+
+
+/* Ajoute dans v_mesh, l'ensemble des meshes du (ou des) fichier(s) 3ds passé en paramètres.
+*
+*/
+ vector<MyMesh> meshes_fichier3ds(int argc, const char* argv[]){
+
+        vector<MyMesh> v_mesh;
+
+        for(unsigned int i_file=1; i_file<argc; i_file++)
+        {
+            Lib3dsFile *f = lib3ds_file_load(argv[i_file]);
+
+            if ( f==NULL )
+            {
+                cout << "Error loading: " << argv[i_file] << " => skipping" << endl;
+                continue;
+            }
+
+            cout << "Loaded "<<argv[i_file]<<endl;
+
+            lib3ds_file_eval(f,0.0f); //time passed as second parameter (required to recompute coordinates)
+
+            if (f->nodes == NULL)
+            {
+
+                cout << "Pas de noeud"<<endl;
+
+            }
+            else
+            {
+
+                for(Lib3dsNode *node=f->nodes; node; node=node->next)
+                    MeshNode(f, node,v_mesh);
+
+            }
+        }
+
+
+        return v_mesh;
+
+
+}
+
+
+/*
+* Retourne un vecteur de batiment simple
+*/
+vector<BatimentSimple> vector_BatimentSimple(vector<MyMesh>& v_mesh){
+
+    vector<BatimentSimple> v_BatimentSimple;
+    string nameBS_temp=v_mesh[0].nameBS;
+
+    BatimentSimple BS;
+    BS.nameBatimentComposite=v_mesh[0].nameBC;
+    BS.nameBatimentSimple=nameBS_temp;
+
+    BS.v_mesh.push_back(v_mesh[0]);
+
+    for(int j=1;j<v_mesh.size();j++){
+
+        if(v_mesh[j].nameBS==nameBS_temp){
+
+            BS.v_mesh.push_back(v_mesh[j]);
+            //cout<<BS.nameBatimentSimple<<endl;
+        }else{
+            //BS.setEmpreinte2D();
+            v_BatimentSimple.push_back(BS);
+            BS.v_mesh.clear();
+           // BS.empreinte2DBatimentSimple.clear();
+            BS.v_mesh.push_back(v_mesh[j]);
+            nameBS_temp=v_mesh[j].nameBS;
+            BS.nameBatimentSimple=nameBS_temp;
+            BS.nameBatimentComposite=v_mesh[j].nameBC;
+        }
+
+    }
+
+   // BS.setEmpreinte2D();
+    v_BatimentSimple.push_back(BS);
+
+    //cout<<v_BatimentSimple.size()<<endl;
+
+    return v_BatimentSimple;
+}
+
+
+
+void afficher_batimentSimple(vector<BatimentSimple> & v_BatimentSimple){
+
+
+    for(int j=0;j<v_BatimentSimple.size();j++){
+
+        cout<< "*************"<<endl;
+        cout << v_BatimentSimple[j].nameBatimentComposite <<endl;
+        cout << v_BatimentSimple[j].nameBatimentSimple <<endl;
+
+        for(int k=0;k<v_BatimentSimple[j].v_mesh.size();k++){
+
+           cout<<v_BatimentSimple[j].v_mesh[k].name <<endl;
+
+        }
+
+    }
+
+
+
+}
+
+void afficher_meshes(vector<MyMesh*> v_mesh){
+
+
+    for(int j=0;j<v_mesh.size();++j){
+
+        cout<<v_mesh[j]->name <<endl;
+        cout<<v_mesh[j]->nameBS <<endl;
+    }
+
+}
+
+
+/*
+ *Fonction permettant d'écrire dans un fichier texte les meshes
+ *
+ */
+void write_vector_to_text_file(vector<MyMesh> v_mesh , std::string filename)
+{
+    std::ofstream f(filename.c_str());
+
+    f << "nomBatimentComposite"<<" "<<"nomBatimentSimple"<<" "<<"nomMesh"<<" "<<"x1"<<" "<<"y1"<<" "<<"x2"<<" "<<"y2"<<'\n';
+
+    for(int j=0;j<v_mesh.size();++j)
+    {
+
+        std::stringstream x1,y1, x2,y2;
+
+        x1.precision(std::numeric_limits<double>::digits10);
+
+        y1.precision(std::numeric_limits<double>::digits10);
+
+        x2.precision(std::numeric_limits<double>::digits10);
+
+        y2.precision(std::numeric_limits<double>::digits10);
+
+
+        cout << v_mesh[j].pt[v_mesh[j].segment2D[0]][0]<<endl;
+        cout<< v_mesh[j].pt[v_mesh[j].segment2D[0]][1] <<endl;
+        cout<< v_mesh[j].pt[v_mesh[j].segment2D[1]][0]<<endl;
+        cout<< v_mesh[j].pt[v_mesh[j].segment2D[1]][1]<<endl;
+
+        x1 << v_mesh[j].pt[v_mesh[j].segment2D[0]][0];
+        y1 << v_mesh[j].pt[v_mesh[j].segment2D[0]][1];
+        x2 << v_mesh[j].pt[v_mesh[j].segment2D[1]][0];
+        y2 << v_mesh[j].pt[v_mesh[j].segment2D[1]][1] ;
+
+        f<<v_mesh[j].nameBC<<" "<<v_mesh[j].nameBS<<" "<<v_mesh[j].name<<" "<<x1.str()<<" "<<y1.str()<<" "<<x2.str()<<" "<<y2.str()<<'\n'; //for now, only x, y
+
+    }
+
+}
+
+float FindDistanceToSegment(float x1, float y1, float x2, float y2, float pointX, float pointY)
+{
+    float diffX = x2 - x1;
+    float diffY = y2 - y1;
+
+    float t = ((pointX - x1) * diffX + (pointY - y1) * diffY) / (diffX * diffX + diffY * diffY);
+
+    if (t < 0)
+    {
+        //point is nearest to the first point i.e x1 and y1
+        diffX = pointX - x1;
+        diffY = pointY - y1;
+    }
+    else if (t > 1)
+    {
+        //point is nearest to the end point i.e x2 and y2
+        diffX = pointX - x2;
+        diffY = pointY - y2;
+    }
+    else
+    {
+        //if perpendicular line intersect the line segment.
+        diffX = pointX - (x1 + t * diffX);
+        diffY = pointY - (y1 + t * diffY);
+    }
+
+    //returning shortest distance
+    return sqrt(diffX * diffX + diffY * diffY);
+}
+
+bool FacadesProchent(const Lg::Point3f &A,const Lg::Point3f &B, const Lg::Point3f &C , const Lg::Point3f &D,float seuil){
+
+   if(FindDistanceToSegment(A.x(),A.y(),B.x(),B.y(),C.x(),C.y())<seuil) return true;
+   if(FindDistanceToSegment(A.x(),A.y(),B.x(),B.y(),D.x(),D.y())<seuil) return true;
+   if(FindDistanceToSegment(C.x(),C.y(),D.x(),D.y(),A.x(),A.y())<seuil) return true;
+   if(FindDistanceToSegment(C.x(),C.y(),D.x(),D.y(),B.x(),B.y())<seuil) return true;
+
+  return false;
+}
+
+//TODO:
+/*
+* Permet de savoir si 2 batiments Composites se touchent ou pas
+*/
+bool DeuxBatimentsCompositesSeTouchent(const BatimentComposite & it_BC,const BatimentComposite & it_BC2){
+
+
+    for(int k=0; k<it_BC.v_batimentSimple.size();++k){
+       for(int i=0; i<it_BC.v_batimentSimple[k].v_mesh.size();++i){
+
+        const int IndicePoint1=it_BC.v_batimentSimple[k].v_mesh[i].segment2D[0];
+        const int IndicePoint2=it_BC.v_batimentSimple[k].v_mesh[i].segment2D[1];
+
+        for(int e=0; e<it_BC2.v_batimentSimple.size();++e){
+            for(int j=0; j<it_BC2.v_batimentSimple[e].v_mesh.size();++j){
+
+               int IndicePoint3=it_BC2.v_batimentSimple[e].v_mesh[j].segment2D[0];
+               int IndicePoint4=it_BC2.v_batimentSimple[e].v_mesh[j].segment2D[1];
+
+               const Lg::Point3f A=it_BC.v_batimentSimple[k].v_mesh[i].pt[IndicePoint1];
+               const Lg::Point3f B=it_BC.v_batimentSimple[k].v_mesh[i].pt[IndicePoint2];
+               const Lg::Point3f C=it_BC2.v_batimentSimple[e].v_mesh[j].pt[IndicePoint3];
+               const Lg::Point3f D=it_BC2.v_batimentSimple[e].v_mesh[j].pt[IndicePoint4];
+
+
+               const bool BatimentCompositeSeTouchent=FacadesProchent(A,B,C,D,0.009);
+
+                 if(BatimentCompositeSeTouchent &&
+                         (it_BC.v_batimentSimple[k].v_mesh[i].nameBC!=it_BC2.v_batimentSimple[e].v_mesh[j].nameBC) )
+                     return true;
+            }
+       }
+      }
+    }
+   return false;
+}
+
+
+
+/*
+ * Ajoute à chaque Batiment composite du vecteur v_BC la liste de ses batiments composite voisins
+*/
+void input_Proche_Voisin_Batiment_Composite(vector<BatimentComposite> & v_BC){
+
+    for(int i=0; i<v_BC.size(); ++i)
+    {
+        for(int j=0; j<v_BC.size(); ++j)
+        {
+            if(DeuxBatimentsCompositesSeTouchent(v_BC[i],v_BC[j]))
+                v_BC[i].v_BatimentCompositeVoisins.push_back(v_BC[j]);
+        }
+    }
+}
+
+
+
+vector<BatimentComposite> vecteur_BatimentComposite(vector<BatimentSimple> & v_batimentSimple){
+
+    vector<BatimentComposite> v_BC;
+    BatimentComposite BC;
+
+    for(int i=1;i<v_batimentSimple.size();++i){
+
+        BC.v_batimentSimple.push_back(v_batimentSimple[i-1]);
+        BC.nameBC=v_batimentSimple[i-1].nameBatimentComposite;
+
+        if (v_batimentSimple[i-1].nameBatimentComposite != (v_batimentSimple[i].nameBatimentComposite))
+        {
+                v_BC.push_back(BC);
+                BC.v_batimentSimple.clear();
+         }
+
+        if(i==(v_batimentSimple.size()-1)){
+
+            BC.v_batimentSimple.push_back(v_batimentSimple[i]);
+            v_BC.push_back(BC);
+
+        }
+
+    }
+
+    input_Proche_Voisin_Batiment_Composite(v_BC);
+
+    return v_BC;
+
+}
+
+
+
+void afficher_batimentComposite(vector<BatimentComposite> &v_BatimentComposite){
+
+
+    for(int i=0;i<v_BatimentComposite.size();++i){
+        cout <<"***********************  ";
+        cout <<"Nom du batiment Composite : "<<v_BatimentComposite[i].nameBC<<"   ***********************"<< endl;
+        for(int j=0;j<v_BatimentComposite[i].v_BatimentCompositeVoisins.size();++j){
+                     cout <<"- Nom du batiment BatimentComposite Voisin : "<<v_BatimentComposite[i].v_BatimentCompositeVoisins[j].nameBC<< endl;
+        }
+        for(int k=0;k<v_BatimentComposite[i].v_batimentSimple.size();++k){
+                       cout <<"- Nom du batiment Simple : "<<v_BatimentComposite[i].v_batimentSimple[k].nameBatimentSimple<< endl;
+        }
+
+    }
+
+
+
+}
+
+
+/*
+ * Les batiments composite de bloc2 vont être supprimer du vecteur v_BC
+*/
+void effacer_batimentComposite_ds_vecteur(vector<BatimentComposite>& v_BatimentComposite, vector<BatimentComposite>& v_BC){
+
+
+    auto it_BC1=v_BC.begin();
+
+    while(it_BC1!=v_BC.end())
+    {
+         for(int i=0; i<v_BatimentComposite.size();++i)
+                    if(it_BC1->nameBC==v_BatimentComposite[i].nameBC){v_BC.erase(it_BC1);it_BC1--; break;}
+
+         ++it_BC1;
+    }
+
+}
+
+
+/*
+ * Savoir si un batiment composite est dans un vecteur de batiment composite
+*/
+bool exists(BatimentComposite batiment, vector<BatimentComposite> vecBC)
+{
+    vector<BatimentComposite>::iterator it = vecBC.begin();
+
+    while ((it != vecBC.end()) && (it->nameBC != batiment.nameBC))
+        ++it;
+
+   return (it != vecBC.end());
+}
+
+void create_bloc( vector<BatimentComposite> v_BC, vector<BatimentComposite>& v_BatimentComposite,bool premier_passage){
+
+    for(auto it_BC=v_BC.begin(); it_BC!=v_BC.end(); ++it_BC)
+    {
+        if(it_BC==v_BC.begin() && premier_passage)
+        {
+            v_BatimentComposite.push_back(*it_BC);
+
+            for(int j=0; j<it_BC->v_BatimentCompositeVoisins.size();++j){
+                v_BatimentComposite.push_back(it_BC->v_BatimentCompositeVoisins[j]);
+            }
+        }
+        else
+        {
+            if(it_BC->v_BatimentCompositeVoisins.size()!=0){
+                for(int j=0; j<it_BC->v_BatimentCompositeVoisins.size();++j){
+                    if (exists(it_BC->v_BatimentCompositeVoisins[j],v_BatimentComposite) && !exists(*it_BC,v_BatimentComposite))
+                        v_BatimentComposite.push_back(*it_BC);
+                }
+            }
+        }
+    }
+}
+
+
+
+void trier_BatimentComposite(vector<BatimentComposite>& v_BatimentComposite, vector<BatimentComposite>& v_BC){
+
+    //v_BatimentComposite=bloc2
+    //premier_passage = test
+
+    bool premier_passage=true;
+
+    int taille;
+
+    do{
+
+        taille=v_BatimentComposite.size();
+
+        create_bloc(v_BC,v_BatimentComposite,premier_passage);
+
+        premier_passage=false;
+
+    }while(v_BatimentComposite.size()>taille);
+
+    effacer_batimentComposite_ds_vecteur(v_BatimentComposite,v_BC);
+
+}
+
+vector<BlocBatimentComposite> vecteur_BlocBatimentComposite(vector<BatimentComposite> & v_BC){
+
+    vector<BatimentComposite>  v_BatimentComposite; //bloc
+    vector<BlocBatimentComposite> v_BlocBatimentComposite; // V_GROUPE
+
+    while(v_BC.size()!=0){
+
+        trier_BatimentComposite(v_BatimentComposite,v_BC);
+        BlocBatimentComposite blocBatimentComposite; //GROUPE
+        blocBatimentComposite.v_BatimentComposite=v_BatimentComposite;
+        v_BlocBatimentComposite.push_back(blocBatimentComposite);
+        v_BatimentComposite.clear();
+
+    }
+
+    return v_BlocBatimentComposite;
+
+
+}
+
+Lib3dsNode* load3dsFile(std::string const &filename){
+
+    Lib3dsFile *f = lib3ds_file_load(filename.c_str());
+    Lib3dsNode* node_parse = lib3ds_node_new_object();
+    node_parse=f->nodes;
+
+    return node_parse;
+}
+
+
+void save3ds(Lib3dsNode* tree, std::string const & filename){
+    Lib3dsFile * file = lib3ds_file_new();
+    lib3ds_file_insert_node(file,tree);
+    lib3ds_file_save(file,filename.c_str());
+}
+
+void create_node(Lib3dsNode * noeud,Lib3dsNode * noeud_parent,string texte,int numero){
+
+    stringstream strs;
+    strs<<texte<<numero;
+    string temp_str = strs.str();
+    char* char_type = (char*) temp_str.c_str();
+
+
+    strcpy(noeud->name,char_type);  // Nom du noeud
+    noeud->parent=noeud_parent;             // Noeud parent
+    noeud->parent_id=noeud_parent->node_id; // Identifiant du noeud parent
+    int b=numero+53052;
+    Lib3dsWord ju=b;
+    noeud->node_id=ju;              // Identifiant du noeud
+
+
+}
+
+Lib3dsNode * noeud_racine(const char* nom_noeud,const Lib3dsWord & identifiant_noeud, Lib3dsNode * noeud_voisin,const Lib3dsWord & identifiant_noeud_parent){
+
+    Lib3dsNode *root=lib3ds_node_new_object();
+    root->node_id=identifiant_noeud;
+    strcpy(root->name,nom_noeud);
+
+    root->parent_id=identifiant_noeud_parent;
+    root->next=noeud_voisin;
+    root->parent=NULL;
+
+    return root;
+
+}
+
+Lib3dsNode * noeud_par_bloc(Lib3dsNode * read,vector<BlocBatimentComposite> & v_BlocBatimentComposite){
+
+
+    vector<Lib3dsNode*> v_node_batiment_composite;
+
+    for(Lib3dsNode * p=read->childs;p!=0;p=p->next){
+
+        v_node_batiment_composite.push_back(p);
+
+    }
+
+    vector<Lib3dsNode*> v_node_parent;  // Vecteur qui contiendra les noeuds parent, c'est à dire les noeuds correspondant aux blocs
+
+    Lib3dsNode * parent;
+
+    Lib3dsNode * root=noeud_racine("Ville",12035,NULL,LIB3DS_NO_PARENT);
+
+    int numero_bloc;
+
+    for(int j=0;j<v_BlocBatimentComposite.size();++j){
+
+         parent=lib3ds_node_new_object();
+
+         numero_bloc=j+10;
+
+         create_node(parent,root,"Bloc",numero_bloc);
+
+         if(j==0){
+            root->childs=parent;
+            if(j==(v_BlocBatimentComposite.size()-1)){parent->next=NULL;}
+         }
+         else if( j!=0 && j!=(v_BlocBatimentComposite.size()-1)  ){
+             v_node_parent[j-1]->next=parent;
+
+         }else if(j!=0 && j==(v_BlocBatimentComposite.size()-1) ){
+
+             v_node_parent[j-1]->next=parent;
+             parent->next=NULL;
+
+         }
+
+         v_node_parent.push_back(parent); // Je stocke les noeuds parent ( noeud bloc) dans le vecteur v_node_parent
+
+         int indice_before;
+
+         for(int p=0;p<v_BlocBatimentComposite[j].v_BatimentComposite.size();++p){
+
+            for(int m=0; m<v_node_batiment_composite.size(); ++m){
+
+                if( v_BlocBatimentComposite[j].v_BatimentComposite[p].nameBC==v_node_batiment_composite[m]->name){
+
+                    v_node_batiment_composite[m]->parent=v_node_parent[j];
+                    v_node_batiment_composite[m]->parent_id=v_node_parent[j]->node_id;
+
+                    if(p==0){
+
+                         v_node_parent[j]->childs=v_node_batiment_composite[m];
+
+                         indice_before=m;
+
+                         if(v_BlocBatimentComposite[j].v_BatimentComposite.size()==1){
+
+                            v_node_batiment_composite[m]->next=NULL;
+
+                         }
+
+                   }else if(p!=0 && p!=(v_BlocBatimentComposite[j].v_BatimentComposite.size()-1)){
+
+                         v_node_batiment_composite[indice_before]->next=v_node_batiment_composite[m];
+                         indice_before=m;
+
+                   }else if( p!=0 && p==(v_BlocBatimentComposite[j].v_BatimentComposite.size()-1) ){
+
+                       v_node_batiment_composite[indice_before]->next=v_node_batiment_composite[m];
+                       v_node_batiment_composite[m]->next=NULL;
+
+
+                   }
+
+
+
+                   break;
+                }
+           }
+      }
+
+    }
+
+    return root;
+}
+
+bool BatimentCompositeIntersectBloc(BatimentComposite &BatimentComposite,Polygon_2 polygon){
+
+
+    if(!polygon.is_counterclockwise_oriented()){
+        polygon.reverse_orientation();
+    }
+
+    if(!polygon.is_simple()){cout<<"polygon not simple" <<endl;}
+
+
+    for(int l=0;l<BatimentComposite.v_batimentSimple.size();l++){
+         for(int m=0;m<BatimentComposite.v_batimentSimple[l].v_mesh.size();m++){
+
+                 if( !CGAL::do_intersect(BatimentComposite.v_batimentSimple[l].v_mesh[m].polygonSegment, polygon) ){
+                     return false;
+                 }else{
+
+                     return true;
+                 }
+
+
+         }
+    }
+
+
+
+}
+
+
+
+int main(int argc, const char* argv[]){
+
+    if(argc < 2)
+    {
+        cout << "Usage: " << argv[0] << " file1.3ds [file2.3ds [...]]" << endl;
+        return 0;
+    }
+
+
+    vector<MyMesh> v_mesh=meshes_fichier3ds(argc, argv); // Tous les meshes du fichier 3ds
+
+    int nb_segment=4*v_mesh.size();
+
+    Segment_2 seg[nb_segment];
+    Arrangement_2 arr;
+
+    for(int j=0;j<v_mesh.size();j++){
+
+        seg[4*j]=v_mesh[j].cv[0];
+        seg[4*j+1]=v_mesh[j].cv[1];
+        seg[4*j+2]=v_mesh[j].cv[2];
+        seg[4*j+3]=v_mesh[j].cv[3];
+    }
+
+    CGAL::insert (arr, &seg[0], &seg[nb_segment]);
+
+    vector<Polygon_2> v_polygon;
+
+     for(auto it = arr.faces_begin(); it != arr.faces_end(); ++it) {
+           if(it->is_unbounded()){
+            for(auto hit = it->holes_begin(); hit != it->holes_end(); ++hit) {
+               Ccb_halfedge_circulator first, curr;
+               first = curr = *hit;
+               Polygon_2 polygon;
+               do {
+
+                   double x,y;
+                   x= CGAL::to_double (curr->source()->point().x());
+                   y= CGAL::to_double (curr->source()->point().y());
+                   polygon.push_back(Point_2 (x,y));
+
+               }while(++curr != first);
+
+
+               if(!polygon.is_simple()){
+//                   sort( polygon.vertices_begin(), polygon.vertices_end() );
+//                   polygon.erase( unique( polygon.vertices_begin(), polygon.vertices_end(),polygon.vertices_end() );
+
+                   std::set<Point_2> set2;
+                   std::vector<Iterator> vecIt;
+                   for(auto it = polygon.vertices_begin(); it != polygon.vertices_end(); ++it) {
+                        auto ret = set2.insert(*it);
+                        if(!ret.second){
+                            vecIt.push_back(it);
+                        }
+                    }
+                    set2.clear();
+
+                    for(auto it = vecIt.begin(); it != vecIt.end(); ++it)
+                        polygon.erase(*it);
+
+//                      std::cout <<"Corection" <<polygon.is_simple() << std::endl;
+//                      std::cout << "----------------------------------" << std::endl;
+
+
+
+
+
+               }
+
+               v_polygon.push_back(polygon);
+
+           }
+           }
+     }
+
+
+
+
+//    for(int j=0;j<v_polygon.size();j++){
+
+//        if(v_polygon[j].is_simple()){
+//            cout<< j << "Polygon simple" <<endl;
+//        }
+//        else{
+//            cout<< j << "Polygon not simple" <<endl;
+
+//            print_polygon(v_polygon[j]);
+
+//        }
+
+//    }
+
+    vector<BatimentSimple> v_BatimentSimple=vector_BatimentSimple(v_mesh); // Tous les batiments simples du fichier 3ds
+    v_mesh.clear();
+
+    vector<BatimentComposite> v_BatimentComposite=vecteur_BatimentComposite(v_BatimentSimple); // Tous les batiments composite du fichier 3ds
+    v_BatimentSimple.clear();
+
+    vector<BlocBatimentComposite> v_BlocBatimentComposite;
+    BlocBatimentComposite blocBC;
+//    cout <<"test0" <<endl;
+
+//    cout <<v_polygon.size() <<endl;
+//    cout << v_BatimentComposite.size()<<endl;
+
+    for(int j=0;j<v_polygon.size();j++){
+        for(int k=0;k<v_BatimentComposite.size();k++){
+
+            if(BatimentCompositeIntersectBloc(v_BatimentComposite[k],v_polygon[j])){
+
+                    blocBC.v_BatimentComposite.push_back(v_BatimentComposite[k]);
+
+            }
+        }
+
+        v_BlocBatimentComposite.push_back(blocBC);
+        blocBC.v_BatimentComposite.clear();
+    }
+
+
+
+    //vector<BlocBatimentComposite> v_BlocBatimentComposite=vecteur_BlocBatimentComposite(v_BatimentComposite); // Tous les blocs de batiment composite du fichier 3ds
+    //v_BatimentComposite.clear();
+
+
+//    cout <<"test1" <<endl;
+    Lib3dsFile *f = lib3ds_file_load(argv[1]); // Fichier 3ds
+
+    Lib3dsNode * read = load3dsFile(argv[1]); // Noeud racine du fichier 3ds
+
+    Lib3dsFile * file = lib3ds_file_new();  // Nouveau fichier 3ds
+
+    Lib3dsNode *root=noeud_par_bloc(read,v_BlocBatimentComposite); // Nouveau noeud trié par bloc
+
+    file->meshes=f->meshes;    //On récupère les maillages
+
+    lib3ds_file_insert_node(file,root); // Dans le fichier file, on insère le noeud root.
+
+    lib3ds_file_save(file,"sortie.3DS"); // Sauvegarde du fichier
+
+
+
+    return 0;
+
+}
+
