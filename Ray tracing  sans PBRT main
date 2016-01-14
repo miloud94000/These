@@ -1,0 +1,29 @@
+//------------------------ On démarre le Ray-Tracing-------Solution 2 sans PBRT-------------------------------//
+
+//       double tminimum=1e99;
+
+//       for(int i=0;i<v_mesh.size();i=i+1){
+//            for(int j=0;j<v_mesh[i].face.size();j=j+1)
+//            {
+//                double t=0;
+
+//                if(rayTriangleIntersect(center_point, vec, v_mesh[i].pt[v_mesh[i].face[j].c]+pivot_bati3D,v_mesh[i].pt[v_mesh[i].face[j].b]+pivot_bati3D, v_mesh[i].pt[v_mesh[i].face[j].a]+pivot_bati3D ,t) ){
+
+//                        if(t<tminimum){tminimum=t;}
+
+//                }
+//            }
+//       }
+
+//       if(tminimum!=1e99){
+
+//             Lg::Point3d PointIntersectTriangle=center_point+tminimum*vec;
+//             boost::shared_ptr<shape3d_segment> rayon=boost::shared_ptr<shape3d_segment>(new shape3d_segment(center_point.x(),center_point.y(),center_point.z(),PointIntersectTriangle.x(),PointIntersectTriangle.y(),PointIntersectTriangle.z()," "));
+//             boost::shared_ptr<shape3d_pt> Pt_laser=boost::shared_ptr<shape3d_pt>(new shape3d_pt(center_point.x(),center_point.y(),center_point.z()," ",8,5,5));
+//             boost::shared_ptr<shape3d_pt> Pt_laser1=boost::shared_ptr<shape3d_pt>(new shape3d_pt(PointIntersectTriangle.x(),PointIntersectTriangle.y(),PointIntersectTriangle.z()," ",8,5,5));
+//             toto2.addShape(rayon);
+//             toto3.addShape(Pt_laser);
+//             toto4.addShape(Pt_laser1);
+//       }
+
+//------------------------ Fin du Ray-Tracing---------Solution 1-----------------------------//
