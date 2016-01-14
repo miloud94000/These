@@ -1,3 +1,9 @@
+Lg::Point3d center_point(mls.Cworld(i_echo).X,mls.Cworld(i_echo).Y,mls.Cworld(i_echo).Z); /*! Retrieve the center laser coordonates for the raytracing (this is not necessarily the center laser of Stereopolis);*/
+Lg::Point3d point(mls.Pworld(i_echo).X,mls.Pworld(i_echo).Y,mls.Pworld(i_echo).Z); /*! Retrieve the second laser coordonates for the raytracing;*/
+Lg::Point3d vec=point-center_point; /*! Retrieve the director vector for the raytracing;*/
+vec=vec.Normalized();
+
+
 //------------------------ On démarre le Ray-Tracing-------Solution 2 sans PBRT-------------------------------//
 
 //       double tminimum=1e99;
