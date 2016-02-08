@@ -1,0 +1,34 @@
+#include <iostream>
+#include <numeric>
+#include <random>
+  
+int main(int argc, char* argv[]) {
+     
+    size_t nb = 1000;
+    bool display = true;
+    std::random_device rd;
+    std::mt19937 mt_engine(rd());
+    std::normal_distribution<double> n_dist(5.0, 2.0);
+     
+    std::vector<double> tirages;
+     
+    for(size_t i = 0; i < nb; ++i) {
+        tirages.push_back(n_dist(mt_engine));
+        if(display)
+            std::cout << tirages.back() << " ";<br>    }
+    std::cout << std::endl;
+     
+    double avg = std::accumulate(tirages.cbegin(), tirages.cend(), 0.) / tirages.size();
+     
+    double var = 0;
+    for(const auto e : tirages) {
+        var += (e - avg) * (e - avg);
+    }
+    var /= tirages.size();
+     
+    double e_type = std::sqrt(var);
+     
+    std::cout << "Moyenne : " << avg << std::endl;
+    std::cout << "Variance : " << var << std::endl;
+    std::cout << "Ecart-type : " << e_type << std::endl;
+}
