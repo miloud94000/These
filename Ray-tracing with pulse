@@ -1,0 +1,249 @@
+
+int main(int argc, char **argv)
+{
+    v_attrib_info_t v_attrib_info = ExportableAttributes();
+    if(argc < 7)
+    {
+        // TODO: xml to store additionally the coord system and list of attribs to store
+        cout << "Flexible .ply file export" << endl;
+        cout << "Usage: " << argv[0] << "  sbet_folder sbet_mission laser_calib.xml ept_folder attrib.txt out_name.ply [(int)start_time (int)end_time pivot_E pivot_N]" << endl;
+        cout << "sbet_folder: folder where the sbet files are" << endl;
+        cout << "sbet_mission: common part of all filenames relevant to the same trajectory" << endl;
+        cout << "laser_calib.xml: calibration file for the laser" << endl;
+        cout << "ept_folder: folder containing the echo pulse tables (generated with EptExport)" << endl;
+        cout << "attrib.txt: text file with the names of all attributes to export among:" << endl;
+        cout << "out_name.ply: name of the ply file to write (cf attrib list)" << endl;
+        cout << "(start|end)_time: start and end time of the laser points to export (default=everything)" << endl;
+        cout << "pivot_(E|N): easting/northing of the pivot (default: use first trajectory point)" << endl;
+        cout << "3D model (Bati3D)"<<endl;
+        for(v_attrib_info_t::iterator it=v_attrib_info.begin(); it!=v_attrib_info.end(); it++)
+        {
+            cout << "(" << it->type << ") " << it->name << endl;
+        }
+        cout << "The most simple is to copy paste the lines above in attrib.txt file and keep only the lines you need" << endl;
+        return 0;
+    }
+
+    int i_arg=1;
+    // required
+    string sbet_folder(argv[i_arg++]);
+    string sbet_mission(argv[i_arg++]);
+    string laser_calib(argv[i_arg++]);
+    string ept_folder(argv[i_arg++]);
+    string attrib_filename(argv[i_arg++]);
+    string out_name(argv[i_arg++]);
+
+    // optional
+    int i_start = -1, i_end = -1;
+    if(i_arg < argc) i_start = atoi(argv[i_arg++]);
+    if(i_arg < argc) i_end = atoi(argv[i_arg++]);
+    float pivot_E = 0., pivot_N = 0;
+    if(i_arg < argc) pivot_E = atof(argv[i_arg++]);
+    if(i_arg < argc) pivot_N = atof(argv[i_arg++]);
+
+    // read attrib file
+    ifstream attrib_file(attrib_filename);
+    int n_attrib = 0;
+    do
+    {
+        string attrib; attrib_file >> attrib;
+        if(Require(v_attrib_info, attrib)) n_attrib++;
+    } while(!attrib_file.eof());
+    cout << attrib_filename << " selects " << n_attrib << " known attributes" << endl;
+
+    // read all echo/pulse tables in time interval
+    clock_t start = clock();
+    XMls mls(ept_folder, laser_calib, sbet_folder, sbet_mission);
+    cout << mls.NPulseAttrib() << "/" << mls.NEchoAttrib() << " echos/pulses attributes found in " << ept_folder << endl;
+    cout << "Loading " <<  i_start << " to " << i_end << endl;
+    mls.Load(i_start, i_end);
+    //mls.m_trajecto.SbetSeries().Display(77);
+
+
+    if(pivot_E == 0. && pivot_N == 0.)
+    {
+        XArchiGeoref G = mls.m_trajecto.SbetSeries().GetGeoref(0);
+        pivot_E = G.Translation().X;
+        pivot_N = G.Translation().Y;
+
+    }
+
+    // iteration on echos
+    start = clock();
+    ofstream fileOut(out_name.c_str());
+    if(!fileOut.good())
+    {
+        cout << "Cannot open " + out_name + " for writing\n";
+        return 3;
+    }
+    // write text header
+    fileOut << "ply\nformat binary_little_endian 1.0" << endl;
+    fileOut << "comment Generated with RieglFlexport" << endl;
+    fileOut << "comment IGN offset Pos " << pivot_E << " " << pivot_N << " 0" << endl;
+    fileOut << "element vertex " << mls.NEcho() << endl;
+    int echo_bytesize = 0;
+    for(v_attrib_info_t::iterator it=v_attrib_info.begin(); it!=v_attrib_info.end(); it++) if(it->required)
+    {
+        fileOut << "property " << it->type << " " << it->name << endl;
+        echo_bytesize += it->bytesize;
+    }
+    fileOut << "end_header" << endl;
+    // precompute booleans to know what computation blocks are needed (for efficiency)
+    bool requires_xyz_sensor = Requires(v_attrib_info, 4, 13);
+    bool requires_xyz_center = Requires(v_attrib_info, 7, 13);
+    bool requires_xyz = Requires(v_attrib_info, 10, 13);
+    bool requires_sbet = Requires(v_attrib_info, 14, 26);
+    bool requires_accuracy = Requires(v_attrib_info, 26, 35);
+
+    unsigned long buffer_size = echo_bytesize * mls.NEcho();
+    char * buffer = new char[buffer_size], * it = buffer;
+    cout.precision(16);
+    bool compare = false;
+    double max_error = 0.;
+
+
+
+    vector<MyMesh> v_mesh; // On charge tous les meshes du modele bati3D dans le vecteur v_mesh
+
+    Lib3dsFile *f = lib3ds_file_load(argv[9]);
+
+        if ( f==NULL )
+        {
+            cout << "Error loading: " << " => skipping" << endl;
+
+        }
+
+        cout << "Loaded "<<endl;
+
+        lib3ds_file_eval(f,0.0f); //time passed as second parameter (required to recompute coordinates)
+
+        if (f->nodes == NULL)
+        {
+
+            cout << "Pas de noeud"<<endl;
+
+        }
+        else
+        {
+
+            for(Lib3dsNode *node=f->nodes; node; node=node->next)
+                MeshNode(f, node,v_mesh);
+
+        }
+
+
+    const Lg::Point3d pivot_nuage_de_point(pivot_E,pivot_N,0);
+    const Lg::Point3d pivot_bati3D(651250.,6861250,69.95);
+
+
+//-----------------------Début : Ray-tracing---------------------------------------------//
+    std::vector<Reference<Primitive> >  vref_triangle;
+
+    for(unsigned i=0;i<v_mesh.size();i=i+1){
+
+        for(unsigned j=0;j<v_mesh[i].face.size();j=j+1)
+         {
+              Lg::Point3d point_A=v_mesh[i].pt[v_mesh[i].face[j].a]+pivot_bati3D;
+              Lg::Point3d point_B=v_mesh[i].pt[v_mesh[i].face[j].b]+pivot_bati3D;
+              Lg::Point3d point_C=v_mesh[i].pt[v_mesh[i].face[j].c]+pivot_bati3D;
+
+
+              KdTreeTriangleP* triangle=new KdTreeTriangleP(point_A,point_B,point_C);
+              vref_triangle.push_back(triangle);
+
+         }
+
+    }
+
+    shape3d_file file2;
+    KdTreeIntersection o_kdinter; /*! else, create a KdTreeIntersection object (inherit of Intersection class);*/
+    KdTreeIntersection * p_kdinter = & o_kdinter; /*! Get a pointer on this object;*/
+    Intersection * p_inter = (Intersection *) p_kdinter; /*! Cast this pointer on a Intersection's pointer;*/
+    KdTreeAccel * AccelTree; /*! Create a KdTreeAccel object => essential to build the Kd-tree;*/
+    ParamSet ps;  /*! Object used to set different and various parameter on the Kdtree => As default, parameters are initialized ;*/
+    AccelTree = CreateKdTreeAccelerator(vref_triangle,ps); /*! Build the object AccelTree, ex : build the kd-tree with the primitive vector and the parameter object ;*/
+
+
+    unsigned count = 0;
+
+    for(XPulseIndex i_pulse=0; i_pulse<mls.NEcho(); i_pulse++) // Pour chaque echo laser
+    {
+
+        bool display_echo = (i_pulse % COUT_SUB == 0);
+        // time
+        double time = mls.Time(i_pulse);
+        if(v_attrib_info[0].required) Write<double>(it, time);
+
+
+//------------------------ On démarre le Ray-Tracing-------Solution avec PBRT -------------------------------//
+
+       if(count%100 == 0){
+
+           Lg::Point3d center_point(mls.Cworld(i_pulse).X,mls.Cworld(i_pulse).Y,mls.Cworld(i_pulse).Z); /*! Retrieve the center laser coordonates for the raytracing (this is not necessarily the center laser of Stereopolis);*/
+           Lg::Point3d vec(mls.RayWorld(i_pulse).X,mls.RayWorld(i_pulse).Y,mls.RayWorld(i_pulse).Z);
+
+
+           Point pbrt_point (center_point.X(),center_point.Y(),center_point.Z()); /*! Transform this Lg::Point3d to a PBRT Point;*/
+           const Vector pbrt_vec (vec.X(),vec.Y(),vec.Z()); /*! Transform this Lg::Point to a PBRT Vector;*/
+           Ray ray(pbrt_point,pbrt_vec,0.); /*! Build a PBRT ray with the origin and the director vector;*/
+
+           bool test = false;
+
+           if(AccelTree->Intersect(ray,p_inter)) /*! If the ray intersect primitives (stock all intersected primitives on a std::pair vector member of the class KdTreeIntersection;*/
+          {
+
+                KdTreeIntersection::inter_pair_t best_inter_pair, inter_pair; /*! Create a std::pair(primitive, intersection);*/
+                double best_x =std::numeric_limits<double>::max();/*! initialized a value to find best intersected primitive (minimum distance criterion);*/
+                for(std::vector<KdTreeIntersection::inter_pair_t>::iterator it = p_kdinter->mv_inter_pair.begin(); it!=p_kdinter->mv_inter_pair.end(); it++) /*! Through the intersected primitives vector;*/
+                {
+                    double x = (it->second - center_point)*vec; /*! Make this (produit scalaire) to find the nearest intersected primitive;*/
+                    double x_abs = (x<0?-x:x); /*! Just take the absolute value;*/
+                    inter_pair=*it;
+                    const Primitive * p_prim = inter_pair.first;
+                    KdTreeTriangleP * p_triangle = (KdTreeTriangleP*)p_prim; /*! Retrieve and cast the nearest primitive to a KdTreeTriangle object;*/
+
+                    if(x_abs < best_x) {  /*! Keep the nearest primitive;*/
+                         best_x = x;
+                         best_inter_pair = *it;
+                         test = true;
+                    }
+
+
+                }
+                p_kdinter->mv_inter_pair.clear();
+
+                if(test)
+               {
+
+                    
+                                    
+                    boost::shared_ptr<shape3d_pt> Pt_intersection=boost::shared_ptr<shape3d_pt>(new shape3d_pt(best_inter_pair.second.x(),best_inter_pair.second.y(),best_inter_pair.second.z()," "));
+                    file2.addShape(Pt_intersection);
+
+               }
+          }
+
+
+     }
+
+       count++;
+
+    }
+
+
+
+
+    file2.save("./raytracing2.m3d");
+
+
+    shape3d_file::convert2XML("./raytracing2.m3d","./raytracing2.xml");
+
+
+    if(compare) cout << "max_error: " << max_error << endl;
+    cout << "Writing " << mls.NEcho() << " echos of size " << echo_bytesize << "=" << buffer_size/1000000 << "MB to " << out_name << endl;
+    fileOut.write(buffer, buffer_size); // todo: split buffer if too big
+    fileOut.close();
+    delete buffer;
+    cout << "Done in " << (double)(clock() - start) / (double) CLOCKS_PER_SEC << "s" << endl;
+    return 0;
+}
