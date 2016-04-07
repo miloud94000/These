@@ -1,0 +1,18 @@
+-Un peu de spell check à faire mais globalement ton anglais scientifique est bon.
+-Wheater->weather
+-the sources of noises -> the sources of uncertainties
+-Il te manque la ref St ́er ́eopolis II (?)
+
+Plus généralement, on fait deux erreurs importantes dans cet article:
+-On ne prend pas en compte la covariance des positions successives de l'INS: c'était ce que j'avais essayé de régler avec mes formules la dernière fois
+-On prend la calibration comme une erreur gaussienne indépendante pour chaque point alors que la calibration est une erreur systématique. Pour être plus précis, il y a une erreur systématique (qualité de la calibration) et une erreur (peut être gaussienne et indépendante) qui vient de la non rigidité de la plateforme qui peut se déformer/vibrer légèrement. Mathieu avait fait des tests là dessus et montré que ça pouvait atteindre 2 ou 3 px.
+Vu la contrainte de temps, je propose de garder l'article tel qu'il est, avec sa logique de regarder l'erreur pour chaque point indépendamment de tous les autres, mais pour la suite il va falloir prendre tout ça en compte.
+C'est pas si difficile, pour la trajecto je l'ai fait, et pour la calibration, on peut dire que ce qui est fait dans l'article correspond à l'erreur de déformation de la plateforme et donc qu'il faut juste rajouter une erreur systématique de calibration, aléatoire mais constante sur tout le nuage.
+Pour résumer, la position d'un point est une combinaison des variables suivantes:
+-Paramètres (3 translations, 3 rotations) de la transfo Monde->INS à 100Hz. On a une matrice de covariance pleine (mais qui tend vers 0 quand on s'éloigne de la trajectoire) sur les translations, on devrait pouvoir faire la même chose sur les rotations mais il nous manque l'incertitude sur la vitesse angulaire, à creuser
+-Paramètres (3 translations, 3 rotations) de la calibration INS->(Laser sans déformation) aléatoires mais constant.
+-Paramètres (3 translations, 3 rotations) de la déformation mécanique (Laser sans déformation)->(Laser déformé) aléatoires mais sûrement très faibles. Vu la fréquence du laser, elles sont sûrement pas indépendantes entre les points. Donc comme c'est très faible et très difficile à modéliser je propose qu'on zappe.
+-(r,theta,phi) l'erreur est aléatoire, indépendante sur r mais sûrement pas sur theta et phi et il y a sûrement des systématismes. Comme ces erreurs sont faibles, je propose qu'on zappe aussi.
+
+Du coup il nous reste comme variables aléatoires les 3 rotations et 3 translations à 100Hz de la centrale et les 6 params de la calib (plus les params du modèle quand on fera le recalage).
+Dans un premier temps, j'ai même envie de négliger la calib et les 3 rotations, auquel cas on retombe sur une formulation à la Monnier avec 3 translations à 100Hz à trouver. Si on veux moins de variables, il faudra regarder comment on gère un sous échantillonnage de variables aléatoires au niveau de la matrice de covariance de façon à contrôler l'erreur.
