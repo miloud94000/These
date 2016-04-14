@@ -1,5 +1,5 @@
 
-// RieglFlexport.cpp: flexible Riegl exporter from echo/pulse tables (ept) by Bruno Vallet
+
 
 #include <lib3ds/file.h>
 #include <lib3ds/mesh.h>
