@@ -1,0 +1,46 @@
+//    vector<MyMesh> v_mesh; // On charge tous les meshes du modele bati3D dans le vecteur v_mesh
+//    if ( f==NULL )
+//    {
+//            cout << "Error loading: " << " => skipping" << endl;
+
+//    }
+
+//    cout << "Loaded "<<endl;
+
+//    lib3ds_file_eval(f,0.0f); //time passed as second parameter (required to recompute coordinates)
+
+//    if (f->nodes == NULL)
+//    {
+
+//            cout << "Pas de noeud"<<endl;
+
+//    }
+//    else
+//    {
+
+//            for(Lib3dsNode *node=f->nodes; node; node=node->next)
+//                MeshNode(f, node,v_mesh);
+
+//    }
+
+//    const Lg::Point3d pivot_bati3D(651250.,6861250,69.95);
+
+
+
+//    std::vector<Reference<Primitive>>  vref_triangle;
+
+//    for(unsigned i=0;i<v_mesh.size();i=i+1){
+
+//        for(unsigned j=0;j<v_mesh[i].face.size();j=j+1)
+//         {   /* cout <<"--------------------------------" <<endl;*/
+//              Lg::Point3d point_A=v_mesh[i].pt[v_mesh[i].face[j].a]+pivot_bati3D;
+//              Lg::Point3d point_B=v_mesh[i].pt[v_mesh[i].face[j].b]+pivot_bati3D;
+//              Lg::Point3d point_C=v_mesh[i].pt[v_mesh[i].face[j].c]+pivot_bati3D;
+
+
+//              KdTreeTriangleP* triangle=new KdTreeTriangleP(point_A,point_B,point_C,v_mesh[i].nameBloc,v_mesh[i].nameBC,v_mesh[i].nameBS,v_mesh[i].name);
+//              vref_triangle.push_back(triangle);
+
+//         }
+
+//    }
