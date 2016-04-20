@@ -44,3 +44,90 @@
 //         }
 
 //    }
+
+
+/*!-----------------------Début : Ray-tracing---------------------------------------------!*/
+
+
+//    KdTreeIntersection o_kdinter; /*! else, create a KdTreeIntersection object (inherit of Intersection class);*/
+//    KdTreeIntersection * p_kdinter = & o_kdinter; /*! Get a pointer on this object;*/
+//    Intersection * p_inter = (Intersection *) p_kdinter; /*! Cast this pointer on a Intersection's pointer;*/
+//    KdTreeAccel * AccelTree; /*! Create a KdTreeAccel object => essential to build the Kd-tree;*/
+//    ParamSet ps;  /*! Object used to set different and various parameter on the Kdtree => As default, parameters are initialized ;*/
+//    AccelTree = CreateKdTreeAccelerator(modele_Bati3D.m_vref_triangle,ps); /*! Build the object AccelTree, ex : build the kd-tree with the primitive vector and the parameter object ;*/
+
+
+//    KdTreeTriangleP * p_triangle;
+//    vector<KdTreeTriangleP *> vp_triangle;
+
+//    unsigned int Nbre_point_intersect=0;
+//    vector<double> range_virtuelle;
+
+
+//    for(XPulseIndex i_pulse=0; i_pulse<mls.NPulse(); i_pulse++) // Pour chaque echo laser
+//    {
+
+
+//        // time
+//        double time = mls.Time(i_pulse); // Récupérer le temps du pulse
+
+
+///*!------------------------ On démarre le Ray-Tracing-------Solution avec PBRT -------------------------------!*/
+
+//           Lg::Point3d center_point(mls.Cworld(i_pulse).X,mls.Cworld(i_pulse).Y,mls.Cworld(i_pulse).Z); /*! Retrieve the center laser coordonates for the raytracing (this is not necessarily the center laser of Stereopolis);*/
+//           Lg::Point3d vec(mls.RayWorld(i_pulse).X,mls.RayWorld(i_pulse).Y,mls.RayWorld(i_pulse).Z);
+
+
+//           Point pbrt_point (center_point.X(),center_point.Y(),center_point.Z()); /*! Transform this Lg::Point3d to a PBRT Point;*/
+//           const Vector pbrt_vec (vec.X(),vec.Y(),vec.Z()); /*! Transform this Lg::Point to a PBRT Vector;*/
+//           Ray ray(pbrt_point,pbrt_vec,0.); /*! Build a PBRT ray with the origin and the director vector;*/
+
+//           bool test = false;
+
+//           if(AccelTree->Intersect(ray,p_inter)) /*! If the ray intersect primitives (stock all intersected primitives on a std::pair vector member of the class KdTreeIntersection;*/
+//          {
+
+//                KdTreeIntersection::inter_pair_t best_inter_pair, inter_pair; /*! Create a std::pair(primitive, intersection);*/
+//                double best_x =std::numeric_limits<double>::max();/*! initialized a value to find best intersected primitive (minimum distance criterion);*/
+//                for(std::vector<KdTreeIntersection::inter_pair_t>::iterator it = p_kdinter->mv_inter_pair.begin(); it!=p_kdinter->mv_inter_pair.end(); it++) /*! Through the intersected primitives vector;*/
+//                {
+//                    double x = (it->second - center_point)*vec; /*! Make this (produit scalaire) to find the nearest intersected primitive;*/
+//                    double x_abs = (x<0?-x:x); /*! Just take the absolute value;*/
+//                    inter_pair=*it;
+//                    const Primitive * p_prim = inter_pair.first;
+
+
+//                    if(x_abs < best_x) {  /*! Keep the nearest primitive;*/
+
+//                         p_triangle = (KdTreeTriangleP*) p_prim; /*! Retrieve and cast the nearest primitive to a KdTreeTriangle object;*/
+//                         best_x = x;
+//                         best_inter_pair = *it;
+//                         test = true;
+//                    }
+
+
+//                }
+
+
+//                p_kdinter->mv_inter_pair.clear();
+
+//                if(test){
+
+//                   vp_triangle.push_back(p_triangle);
+//                   XPt3D Rayon(best_inter_pair.second.x()-center_point.x(),best_inter_pair.second.y()-center_point.y(),best_inter_pair.second.z()-center_point.z()) ;
+//                   range_virtuelle.push_back(Rayon.Norme());
+
+//                   Nbre_point_intersect++;
+//               }
+
+
+
+//        }else{
+//              range_virtuelle.push_back(0);
+//        }
+
+
+
+
+//    }
+
