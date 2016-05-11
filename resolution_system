@@ -1,0 +1,138 @@
+
+    Resolution_systeme(const Ray_tracing & ray_tracing)
+    {
+
+        nombre_de_bloc=ray_tracing.mv_bloc.size();
+        nombre_de_facade=ray_tracing.mv_facade.size();
+        nombre_de_point=ray_tracing.m_vp_triangle.size();
+        nombre_de_point_dot_3=nombre_de_point*3;
+        nombre_de_bloc_dot_2=nombre_de_bloc*2;
+        nombre_de_colonne = nombre_de_point_dot_3+nombre_de_facade+nombre_de_bloc_dot_2;
+
+
+        setMatrice_B(ray_tracing); // Initialise la matrice B
+        setMatrice_Cll(ray_tracing); // Initialise la matrice Cll
+        setMatrice_g_l0(ray_tracing); // Initialise la fonction g(l(0))
+        setMatrice_l_and_l0(ray_tracing);
+
+       // m_B=[B|C|D]
+//       Eigen::SparseMatrix<double> B(nombre_de_point,nombre_de_point_dot_3);
+//       Eigen::SparseMatrix<double> C(nombre_de_point,nombre_de_facade);
+//       Eigen::SparseMatrix<double> D(nombre_de_point,nombre_de_bloc_dot_2);
+//       B.setZero();
+//       C.setZero();
+//       D.setZero();
+
+
+
+
+
+
+//       Eigen::SparseVector<double> g_l0(nombre_de_point);
+//       Eigen::SparseVector<double> l(nombre_de_colonne);
+//       Eigen::SparseVector<double> l0(nombre_de_colonne);
+
+
+//        for(unsigned int i =0; i<nombre_de_point;i++){
+
+////                   B.coeffRef(i,3*i)=-1*ray_tracing.m_vp_triangle[i]->GetTriangleNormal().x();
+////                   B.coeffRef(i,3*i+1)=-1*ray_tracing.m_vp_triangle[i]->GetTriangleNormal().y();
+////                   B.coeffRef(i,3*i+2)=-1*ray_tracing.m_vp_triangle[i]->GetTriangleNormal().z();
+
+//                   sigma_B.coeffRef(3*i,3*i)=ray_tracing.m_vp_triangle[i]->Ti.x();
+//                   sigma_B.coeffRef(3*i+1,3*i+1)=ray_tracing.m_vp_triangle[i]->Ti.y();
+//                   sigma_B.coeffRef(3*i+2,3*i+2)=ray_tracing.m_vp_triangle[i]->Ti.z();
+
+////                   Lg::Point3d Point_facade=ray_tracing.m_vp_triangle[i]->A();
+////                   Lg::Point3d Point_laser=ray_tracing.m_vp_triangle[i]->Pi;
+////                   Lg::Point3d normale_facade(ray_tracing.m_vp_triangle[i]->GetTriangleNormal().x(),ray_tracing.m_vp_triangle[i]->GetTriangleNormal().y(),ray_tracing.m_vp_triangle[i]->GetTriangleNormal().z());
+
+
+////                   g_l0.coeffRef(i)=(Point_facade-Point_laser)*normale_facade;
+
+////                   l.coeffRef(3*i)=ray_tracing.m_vp_triangle[i]->Ti.x();
+////                   l.coeffRef(3*i+1)=ray_tracing.m_vp_triangle[i]->Ti.y();
+////                   l.coeffRef(3*i+2)=ray_tracing.m_vp_triangle[i]->Ti.z();
+
+//        }
+
+
+//       for(unsigned int i =0; i<nombre_de_facade;i++){
+////            l.coeffRef(nombre_de_point*3+i)=0.;
+//            sigma_C.coeffRef(i,i)=0.1;
+////            for(unsigned int j =0; j<nombre_de_point;j++){
+
+////               if(ray_tracing.mv_facade[i]==ray_tracing.m_vp_triangle[j]->m_nom_facade)
+////                {
+////                    C.coeffRef(j,i)=1.;
+
+////                }
+
+
+////            }
+
+
+//        }
+
+
+//       for(unsigned int i =0; i<nombre_de_bloc;i++){
+////           unsigned int indice=nombre_de_point_dot_3+nombre_de_facade+(2*i);
+////           l.coeffRef(indice)=0.;
+////           l.coeffRef(indice+1)=0.;
+
+//           sigma_D.coeffRef(2*i,2*i)=1.;
+//           sigma_D.coeffRef(2*i+1,2*i+1)=1.;
+////           for(unsigned int j =0; j<nombre_de_point;j++){
+
+////               if(ray_tracing.mv_bloc[i]==ray_tracing.m_vp_triangle[j]->m_nom_du_bloc)
+////               {
+////                   const double nx=ray_tracing.m_vp_triangle[i]->GetTriangleNormal().x();
+////                   const double ny=ray_tracing.m_vp_triangle[i]->GetTriangleNormal().y();
+
+////                   D.coeffRef(j,2*i)=nx;
+////                   D.coeffRef(j,2*i+1)=ny;
+
+////               }
+
+
+////           }
+
+
+//       }
+
+//       m_l0=l;
+//       m_l=l;
+
+//       m_gl0=g_l0;
+
+
+       // m_Cll= [sigma_B   0       0   ]
+       //        [0      sigma_C    0   ]
+       //        [0      0       sigma_D]
+
+//       Eigen::SparseMatrix<double> sigma_BC=blkdiag(sigma_B, sigma_C);
+//       m_Cll=blkdiag(sigma_BC,sigma_D);
+
+//       Eigen::SparseMatrix<double> BC=hcat(B,C);
+//       Eigen::SparseMatrix<double> BCD=hcat(BC,D);
+
+//       m_B=BCD.transpose();
+
+
+
+       m_Cg=-m_gl0-(m_B.transpose()*(m_l-m_l0));
+       m_v=m_Cll*m_B*(m_B.transpose()*m_Cll*m_B)*m_Cg;
+
+
+
+//      m_l=m_l+m_v;
+//      m_Cg=-m_gl0-(m_B.transpose()*(m_l-m_l0));
+//      m_v=m_Cll*m_B*(m_B.transpose()*m_Cll*m_B)*m_Cg;
+
+
+
+
+
+
+
+    }
