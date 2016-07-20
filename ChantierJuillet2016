@@ -1,0 +1,1746 @@
+
+// RieglFlexport.cpp: flexible Riegl exporter from echo/pulse tables (ept) by Bruno Vallet
+#include <Eigen/LU>
+#include <lib3ds/file.h>
+#include <lib3ds/mesh.h>
+#include <lib3ds/node.h>
+//#include <lib3ds/camera.h>
+#include <lib3ds/material.h>
+#include <lib3ds/matrix.h>
+#include <lib3ds/vector.h>
+#include "LgPoint3.hpp"
+#include <ctime>
+#include <iostream>
+#include <fstream>
+#include <set>
+#include "../ept_reader.h"
+#include "libXBaseXML/XArchiXMLException.h"
+#include "shape3d_file.hpp"
+#include "shape3d.hpp"
+#include "shape3d_ellipsoide.hpp"
+#include "shape3d_segment.hpp"
+#include "shape3d_pt.hpp"
+#include "LgPoint2.hpp"
+#include "LgPoint3.hpp"
+#include <LgLine2.hpp>
+#include "core/geometry.h"
+#include "../ClassKdTree.h"
+//#include "../ClassTriangle.h"
+#include "accelerators/kdtreeaccel.h"
+#include "core/paramset.h"
+#include "../XMls.h"
+#include "core/imageio.cpp"
+#include <random>
+#include "../CovarianceMatrix.h"
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <Eigen/Core>
+#include "SFML/Window/Window.hpp"
+#include "LiteShape/shape3d.hpp"
+#include "LiteShape/shape3d_hexaedre.hpp"
+#include <map>
+#include "../XMlsUnc.h"
+#define COUT_SUB 1000000
+#define BLACK    "\033[1;30m"
+#define RED      "\033[1;31m"
+#define GREEN    "\033[1;32m"
+#define YELLOW   "\033[1;33m"
+#define BLUE     "\033[1;34m"
+#define PURPLE   "\033[1;35m"
+#define CYAN     "\033[1;36m"
+#define GREY     "\033[1;37m"
+#define DEFAULT_COLOR "\033[0;m"
+
+#include "/home/mezian/libmatis/matis-libraries/LidarClassif/include/LfTools/Proj2D/PlaneOfProjection.h"
+#include "/home/mezian/libmatis/matis-libraries/LidarClassif/include/LfTools/GenerateHexaedre.h"
+using namespace std;
+double Tx=0.f, Ty=0.f, Tz=0.f;
+
+
+
+struct MyFace{
+    uint16_t a, b, c;
+};
+
+
+
+struct strip{
+
+    vector<Lg::Point3> v_pt; // On sotcke dans l'ordre les points A,B,C,D d'un patch
+//    vector<MyFace> v_triangle;   // Chaque patch contient 2 triangles
+    unsigned int numero_strip;
+};
+
+struct MyMesh
+{
+    string nameBloc;
+    string name;
+    string nameBC;
+    string nameBS;
+    vector<Lg::Point3> pt;
+    vector<Lg::Point2> uv;
+    vector<MyFace> face;
+    uint16_t first_id;
+    vector<strip> v_strip;
+
+};
+
+
+MyMesh CreateMesh(Lib3dsMesh *mesh, string nameBC,string nameBS, string nameBloc){
+
+    MyMesh my_mesh;
+//    cout<< "-----------------"<<endl;
+    std::string name(mesh->name);
+
+    my_mesh.nameBloc = nameBloc;
+    my_mesh.name = name;
+    my_mesh.nameBC=nameBC;
+    my_mesh.nameBS=nameBS;
+//    cout<< "Numéro du bloc: " <<my_mesh.nameBloc<< endl;
+//    cout<< "Numéro du Batiment composite : " <<my_mesh.nameBC<< endl;
+//    cout<< "Numéro du Batiment simple : " <<my_mesh.nameBS<< endl;
+//    cout<< "Nom du mesh : " <<my_mesh.name<< endl;
+//    cout<< "First id du mesh :"<<my_mesh.first_id<< endl;
+
+    for (unsigned i=0; i<mesh->faces; ++i)
+    {
+        MyFace f;
+        f.a = mesh->faceL[i].points[0];
+        f.b = mesh->faceL[i].points[1];
+        f.c = mesh->faceL[i].points[2];
+        my_mesh.face.push_back(f);
+
+//       cout <<"Le triangle "<< i<<" est composé des points :" <<my_mesh.face[i].a<<","<<my_mesh.face[i].b<<","<<my_mesh.face[i].c << endl;
+    }
+
+    for (unsigned i=0; i<mesh->points; ++i)
+    {
+        Lg::Point3 p;
+        p.x() = mesh->pointL[i].pos[0];
+        p.y() = mesh->pointL[i].pos[1];
+        p.z() = mesh->pointL[i].pos[2];
+
+        my_mesh.pt.push_back(p);
+//        cout<< "Point "<< i <<" :"<< my_mesh.pt[i]<< endl;
+    }
+
+    return my_mesh;
+
+}
+
+
+
+void MeshNode(Lib3dsFile *f, Lib3dsNode *node, vector<MyMesh> & v_mesh)
+{
+    Lib3dsNode *p;
+    //cout <<node->node_id<<endl;
+    for (p=node->childs; p!=0; p=p->next){
+        MeshNode(f, p, v_mesh);
+    }
+
+    Lib3dsMesh *mesh=lib3ds_file_mesh_by_name(f,node->name);
+
+    if(!mesh) return;
+    if(mesh->name[0]=='F' || mesh->name[0]=='T'){
+        string nameBloc=node->parent->parent->parent->parent->name;
+        string nameBC=node->parent->parent->parent->name;
+        string nameBS=node->parent->parent->name;
+        v_mesh.push_back(CreateMesh(mesh,nameBC,nameBS,nameBloc));
+
+    }
+}
+
+bool existsFacade(std::string nomfacade, vector<KdTreeTriangleP *> v_triangle,unsigned int & compteur)
+{
+
+     vector<KdTreeTriangleP *>::iterator it = v_triangle.begin();
+
+    while ((it != v_triangle.end()) && ((*it)->m_nom_facade!= nomfacade)){
+        ++it;
+        ++compteur;
+
+    }
+   return (it != v_triangle.end());
+}
+
+bool existsBloc(std::string m_nom_du_bloc, vector<KdTreeTriangleP *> v_triangle)
+{
+
+     vector<KdTreeTriangleP *>::iterator it = v_triangle.begin();
+
+    while ((it != v_triangle.end()) && ((*it)->m_nom_du_bloc!= m_nom_du_bloc)){
+        ++it;
+
+    }
+   return (it != v_triangle.end());
+}
+
+
+
+/*! Translation aléatoire suivant une gaussienne d'ecart-type sigma !*/
+Eigen::Vector2d translation2D(double sigma){
+
+    Eigen::Matrix2d covar;
+
+    covar << sigma*sigma ,0,
+             0,sigma*sigma;
+
+    Eigen::Vector2d mean= Eigen::VectorXd::Zero(2) ;
+
+    Eigen::EigenMultivariateNormal<double> normX_solver(mean,covar,false,rand());
+
+    Eigen::Vector2d translation2D=normX_solver.samples(1);
+
+    return translation2D ;
+}
+
+
+/*! Parcours le fichier lib3DS et ajoute une translation par facade et par bloc de batiment !*/
+void MeshNode_addTranslation(Lib3dsFile *f, Lib3dsNode *node, vector<KdTreeTriangleP *> v_triangle )
+{
+    Lib3dsNode *p;
+    for (p=node->childs; p!=0; p=p->next){
+
+        if(p->name[0]=='B'){ // A chaque bloc une Translation 2D differente
+           double sigma=1.;
+           Eigen::Vector2d translation=translation2D(sigma);
+           Tx=translation[0];
+           Ty=translation[1];
+       }
+        MeshNode_addTranslation(f, p, v_triangle);
+    }
+
+    Lib3dsMesh *mesh=lib3ds_file_mesh_by_name(f,node->name);
+
+    if(!mesh) return;
+    unsigned int indice=0; // va nous servir à récuperer la normale du triangle de la facade
+
+    if(mesh->name[0]=='F'){
+
+        string nameBloc=node->parent->parent->parent->parent->name;
+        string nameBC=node->parent->parent->parent->name;
+        string nameBS=node->parent->parent->name;
+
+
+        if( existsFacade(mesh->name, v_triangle, indice) ){ // Si la facade a été touché par le Ray-tracing
+
+            double nx =v_triangle[indice]->GetTriangleNormal()[0]; // Normal à la facade suivant x
+            double ny=v_triangle[indice]->GetTriangleNormal()[1];   // Normal à la facade suivant y
+
+            for (unsigned int i=0; i<mesh->points; ++i)
+            {
+                double sigma = 0.1;
+
+                Eigen::VectorXd translation=translation2D(sigma);
+
+                double tx =translation[0];
+                double ty=translation[1];
+
+//                cout <<PointPerturbe <<endl;
+                mesh->pointL[i].pos[0]=mesh->pointL[i].pos[0]+tx*nx;
+                mesh->pointL[i].pos[1]=mesh->pointL[i].pos[1]+ty*ny;
+
+            }
+
+         }
+
+   }
+
+    if( mesh->name[0]=='F' || mesh->name[0]=='T' ){
+
+        string nameBloc=node->parent->parent->parent->parent->name;
+        string nameBC=node->parent->parent->parent->name;
+        string nameBS=node->parent->parent->name;
+        if(existsBloc(nameBloc,v_triangle)){
+
+            for (unsigned int i=0; i<mesh->points; ++i)
+            {
+                mesh->pointL[i].pos[0]=mesh->pointL[i].pos[0]+Tx;
+                mesh->pointL[i].pos[1]=mesh->pointL[i].pos[1]+Ty;
+            }
+        }
+    }
+
+}
+
+
+
+int Typesize(string type_name)
+{
+    if(type_name == "float32" || type_name == "int32" || type_name == "uint32") return 4;
+    if(type_name == "float64" || type_name == "int64" || type_name == "uint64") return 8;
+    if(type_name == "int8" || type_name == "uint8") return 1;
+    if(type_name == "int16" || type_name == "uint16") return 2;
+    return 0;
+}
+
+
+
+
+template <typename T> void Write(char * & it, T data)
+{
+    *reinterpret_cast<T*>(it) = data;
+    it += sizeof(T);
+}
+
+
+XPt3D interpolationErreur(const XPt3D & erreur_plus,const XPt3D & erreur_moins,const double & t_plus,const double & t_moins,const double & t){
+
+    XPt3D erreur=erreur_moins*(t_plus-t)+erreur_plus*(t-t_moins)/(t_plus-t_moins);
+    return erreur;
+}
+
+
+
+bool myfunction (KdTreeTriangleP* const m1, KdTreeTriangleP* const m2) {
+  return (m1->m_nom_facade==m2->m_nom_facade);
+}
+
+bool myfunction_string(const std::string & m1,  const std::string&  m2) {
+  return (m1==m2);
+}
+
+
+bool my_function_patch(const unsigned int & m1,  const unsigned int &  m2) {
+  return (m1==m2);
+}
+
+
+
+bool myfunction2(KdTreeTriangleP* const m1, KdTreeTriangleP* const m2) {
+  return (m1->m_nom_du_bloc==m2->m_nom_du_bloc);
+}
+
+
+
+
+bool trier_par_bloc(KdTreeTriangleP* const m1, KdTreeTriangleP* const m2) {
+  return (m1->m_nom_du_bloc< m2->m_nom_du_bloc);
+}
+
+bool trier_par_bloc_string(const std::string & m1,  const std::string&  m2) {
+  return (m1< m2);
+}
+
+
+bool trier_par_facade(KdTreeTriangleP* const m1, KdTreeTriangleP* const m2) {
+  return (m1->m_nom_facade< m2->m_nom_facade);
+}
+
+bool trier_par_patch(KdTreeTriangleP* const m1, KdTreeTriangleP* const m2) {
+  return (m1->numero_patch< m2->numero_patch);
+}
+
+
+bool trier_par_facade_string( const std::string&  m1,  const std::string&  m2) {
+  return (m1< m2);
+}
+
+bool trier_par_numero_patch( const unsigned int &  m1,  const unsigned int &  m2) {
+  return (m1< m2);
+}
+
+bool selection_toit(KdTreeTriangleP* const m1) {
+  return (m1->m_nom_facade[0]=='T');
+}
+
+bool selection_toit_string(const std::string & m1) {
+  return (m1[0]=='T');
+}
+
+// Fonction qui perturbe la trajectoire a partir de la matrice de covariance des positions succesives de l'ins
+void perturbation_trajectoire(XMls & mls,const double & amplification_x=1.,const double & amplification_y=1.,const double & amplification_z=1.){
+
+        Covariance covariance(mls.m_trajecto,amplification_x,amplification_y,amplification_z);
+        Eigen::MatrixXd covar(mls.m_trajecto.AccuracySeries().Nevent()*3,mls.m_trajecto.AccuracySeries().Nevent()*3);
+
+        Eigen::VectorXd mean= Eigen::VectorXd::Zero(mls.m_trajecto.AccuracySeries().Nevent()*3) ;
+
+
+        covar =covariance.getCovariance();
+        Eigen::EigenMultivariateNormal<double> normX_solver(mean,covar,false);
+        Eigen::VectorXd PointPerturbe=normX_solver.samples(1);
+
+
+        for(int i=0;i<mls.m_trajecto.SbetSeries().Nevent();i++){
+
+
+            double t=mls.m_trajecto.SbetSeries().Event(i).m_time;
+
+            int evt= mls.m_trajecto.AccuracySeries().PrevIndex(t);
+            int evt1=evt+1;
+
+            double t_moins=mls.m_trajecto.AccuracySeries().Event(evt).m_time;
+            double t_plus=mls.m_trajecto.AccuracySeries().Event(evt+1).m_time;
+
+            XPt3D erreur_moins(PointPerturbe(evt*3),PointPerturbe(evt*3+1),/*PointPerturbe(evt*3+2)*/0.);
+            XPt3D erreur_plus(PointPerturbe(evt1*3),PointPerturbe(evt1*3+1),0./*PointPerturbe(evt1*3+2)*/);
+
+            XPt3D erreur=interpolationErreur(erreur_plus,erreur_moins,t_plus,t_moins,t);
+            erreur.Z=0.;
+            mls.m_trajecto.SbetSeries().ApplyTranslation(i,erreur);
+       }
+
+
+
+}
+
+//-----------------------------------------------------------------------------------------------------------//
+/*!                                            Modele Bati3D!                                                */
+//-----------------------------------------------------------------------------------------------------------//
+
+class Modele_Bati3D
+{
+
+public :
+
+
+   std::vector<Reference<Primitive>>  m_vref_triangle;
+   std::vector<Reference<Primitive> > m_vref_triangle_patch;
+   Lg::Point3d m_pivot_BATI3D;
+   unsigned int m_numero_bande;
+
+   Modele_Bati3D(Lib3dsFile *file,const Lg::Point3d & pivot_bati3D, shape3d_file & shape){
+
+       vector<MyMesh> v_mesh;
+       m_numero_bande=1; // Chaque strip vas recevoir un numéro unique
+
+
+       if (file==NULL )
+       {
+
+         std::cout<< RED <<__FUNCTION__<<" ....  "<< "Error loading: " << " => skipping" <<  "...."<<std::endl;
+
+       }
+
+       std::cout << "Loaded "<<std::endl;
+
+       lib3ds_file_eval(file,0.0f); //time passed as second parameter (required to recompute coordinates)
+
+       if (file->nodes == NULL)
+       {
+
+                std::cout<< RED <<__FUNCTION__<<" ....  "<< "Pas de noeuds" <<  "...."<<std::endl;
+       }
+       else
+       {
+
+               for(Lib3dsNode *node=file->nodes; node; node=node->next)
+                   MeshNode(file, node,v_mesh,shape);
+
+       }
+
+       m_pivot_BATI3D=pivot_bati3D;
+
+       for(unsigned i=0;i<v_mesh.size();i=i+1){
+           for(unsigned j=0;j<v_mesh[i].face.size();j=j+1)
+            {
+                 Lg::Point3d point_A=v_mesh[i].pt[v_mesh[i].face[j].a]+pivot_bati3D;
+                 Lg::Point3d point_B=v_mesh[i].pt[v_mesh[i].face[j].b]+pivot_bati3D;
+                 Lg::Point3d point_C=v_mesh[i].pt[v_mesh[i].face[j].c]+pivot_bati3D;
+
+
+                 KdTreeTriangleP* triangle=new KdTreeTriangleP(point_A,point_B,point_C,v_mesh[i].nameBloc,v_mesh[i].nameBC,v_mesh[i].nameBS,v_mesh[i].name);
+                 m_vref_triangle.push_back(triangle);
+
+            }
+
+       }
+
+
+       for(unsigned int i=0;i<v_mesh.size();i++){
+           for(unsigned int j=0;j<v_mesh[i].v_strip.size();j++)
+            {
+                 Lg::Point3d point_A_patch=v_mesh[i].v_strip[j].v_pt[0]+pivot_bati3D;
+                 Lg::Point3d point_B_patch=v_mesh[i].v_strip[j].v_pt[1]+pivot_bati3D;
+                 Lg::Point3d point_C_patch=v_mesh[i].v_strip[j].v_pt[2]+pivot_bati3D;
+                 Lg::Point3d point_D_patch=v_mesh[i].v_strip[j].v_pt[3]+pivot_bati3D;
+
+                // Attention : les points doivent être entré dans le sens inverse des aiguilles d'une montre.
+
+                 // A                B
+                 // *---------------*
+                 // |    Facade     |
+                 // |               |
+                 // *---------------*
+                 // D                C
+
+                 KdTreeTriangleP* triangle1=new KdTreeTriangleP(point_B_patch,point_A_patch,point_D_patch,v_mesh[i].nameBloc,v_mesh[i].nameBC,v_mesh[i].nameBS,v_mesh[i].name);
+                 KdTreeTriangleP* triangle2=new KdTreeTriangleP(point_B_patch,point_D_patch,point_C_patch,v_mesh[i].nameBloc,v_mesh[i].nameBC,v_mesh[i].nameBS,v_mesh[i].name);
+
+                 triangle1->setPatch(v_mesh[i].v_strip[j].numero_strip/*,v_mesh[i].v_strip.size()*/); // Chaque triangle à un numéro de strip
+                 triangle2->setPatch(v_mesh[i].v_strip[j].numero_strip/*,v_mesh[i].v_strip.size()*/);
+
+                 m_vref_triangle_patch.push_back(triangle1); //  : 1 strip = 2 triangles
+                 m_vref_triangle_patch.push_back(triangle2);
+
+            }
+
+       }
+
+
+
+
+
+
+
+
+       std::cout<< GREEN <<__FUNCTION__<<"---Succès du chargement des données ----"<<DEFAULT_COLOR<<std::endl;
+
+   }
+
+
+
+   MyMesh CreateMesh(Lib3dsMesh *mesh, string nameBC,string nameBS, string nameBloc,shape3d_file & shape){
+
+       MyMesh my_mesh;
+
+       std::string name(mesh->name);
+
+       my_mesh.nameBloc = nameBloc;
+       my_mesh.name = name;
+       my_mesh.nameBC=nameBC;
+       my_mesh.nameBS=nameBS;
+{
+//       std::cout<< "=============================="<<std::endl;
+//       std::cout <<"Nom du bloc : " <<nameBloc<<std::endl;
+//       std::cout <<"Nom de la facade : " <<name<<std::endl;
+//       std::cout <<"Nom du batiment composite : " <<nameBC<<std::endl;
+//       std::cout <<"Nom du batiment simple : "<< nameBS<<std::endl;
+}
+
+       for (unsigned i=0; i<mesh->faces; ++i)
+       {
+           MyFace f;
+           f.a = mesh->faceL[i].points[0];
+           f.b = mesh->faceL[i].points[1];
+           f.c = mesh->faceL[i].points[2];
+
+//           std::cout << "Triangle "<< i << ": " << "( " << f.a << " , " << f.b << " , "<<f.c<<" )"<<std::endl;
+           {
+//           std::cout << "fb "<< i << ": " <<f.b<<std::endl;
+//           std::cout << "fc "<< i << ": " <<f.c<<std::endl;
+            }
+           my_mesh.face.push_back(f);
+       }
+
+       for (unsigned i=0; i<mesh->points; ++i)
+       {
+           Lg::Point3d p;
+           p.x() = mesh->pointL[i].pos[0];
+           p.y() = mesh->pointL[i].pos[1];
+           p.z() = mesh->pointL[i].pos[2];
+            {
+//           std::cout << "Point "<< i << ": " <<p<<std::endl;
+            }
+           my_mesh.pt.push_back(p);
+       }
+
+       const double strip_width=3.;
+
+       Lg::Point3d A;
+       Lg::Point3d B;
+       Lg::Point3d C;
+       Lg::Point3d D;
+
+       // Dans le cas ou la facade à 4 ou 6 points
+       if(my_mesh.pt.size()==4){  // Si la facade à 4 points
+
+           A=my_mesh.pt[0];
+           B=my_mesh.pt[1];
+           C=my_mesh.pt[2];
+           D=my_mesh.pt[3];
+
+       }else if(my_mesh.pt.size()==6){ // Si la facade a 6 points
+
+
+
+           // A(pt0)    (pt1)       B (pt2)
+           // *-----     *    ----------*
+           // |    Facade               |
+           // |                         |
+           // *(pt5)-----*(pt4)   ---  -* (pt3)
+           // D                         C
+
+            A=my_mesh.pt[0];
+            B=my_mesh.pt[2];
+            C=my_mesh.pt[3];
+            D=my_mesh.pt[5];
+
+       }else{
+               std::cout<< RED <<__FUNCTION__<<"WARNING : Les facades peuvent avoir plus de 6 points : revoir l'algo sur les patchs "<<DEFAULT_COLOR<<std::endl;
+
+               exit(1);
+       }
+
+
+            // A                B
+            // *---------------*
+            // |    Facade     |
+            // |               |
+            // *---------------*
+            // D                C
+
+            const Lg::Point3d AB=B-A; // Vecteur de la longeur du haut de la facade
+            const Lg::Point3d DC=C-D; // Vecteur de la longeur du bas de la facade
+
+            const double Longueur_AB=AB.Norm();
+//            const double Longueur_DC=DC.Norm();
+
+            const int nb_strip=round(Longueur_AB/strip_width);
+
+            const double fcd_strip_width=Longueur_AB/nb_strip;
+
+
+            const Lg::Point3 AB_unitaire=AB.Normalized();
+            const Lg::Point3 DC_unitaire=DC.Normalized();
+
+//            MyFace triangle1;
+//            MyFace triangle2;
+
+            if(nb_strip==0){
+
+                strip bande;
+                bande.v_pt.push_back(A);
+                bande.v_pt.push_back(B);
+                bande.v_pt.push_back(C);
+                bande.v_pt.push_back(D);
+{
+//                std::cout <<"ici"  << std::endl;
+//                std::cout <<"Point a" << A << std::endl;
+//                std::cout <<"Point b" << B << std::endl;
+//                std::cout <<"Point c" << C << std::endl;
+//                std::cout <<"Point d" << D << std::endl;
+}
+
+
+//                triangle1.a=3;
+//                triangle1.b=1;
+//                triangle1.c=0;
+//                triangle2.a=1;
+//                triangle2.b=3;
+//                triangle2.c=2;
+
+//                bande.v_triangle.push_back(triangle1);
+//                bande.v_triangle.push_back(triangle2);
+
+               bande.numero_strip=m_numero_bande;
+               m_numero_bande++;
+
+               Proj2D::PlaneOfProjection<double> pop(D,D + Lg::Point3f(DC_unitaire.X(),DC_unitaire.Y(),0),  D + Lg::Point3f(0, 0, 1));
+
+
+
+               boost::shared_ptr<shape3d_hexaedre> hexa=Lf::GenerateHexaedre(pop,
+                                                                             pop.UCoord(C), pop.UCoord(D),
+                                                                             pop.VCoord(C), pop.VCoord(A),
+                                                                             -0.01,0.01 );
+
+               hexa->setDrawName(false);
+               shape.addShape(hexa);
+
+
+
+            }else{
+
+
+
+
+                Lg::Point3 a,b,c,d; // Les 4 points de la bande
+
+
+
+                for(unsigned int i=1;i<=nb_strip;i++){
+                        strip bande;
+
+                        if(i==1){
+
+                            a = A;
+                            b = A + AB_unitaire * fcd_strip_width;                           
+                            d= D;
+                            c= D + DC_unitaire * fcd_strip_width;
+
+
+
+                        }else if(i==nb_strip){
+
+                            a=b;
+                            b=B;
+                            d=c;
+                            c=C;
+
+
+                       }else{
+
+
+                         a=b;
+                         b= a + AB_unitaire * fcd_strip_width;
+                         d=c;
+                         c=d +DC_unitaire * fcd_strip_width;
+
+                       }
+
+                        bande.v_pt.push_back(a);
+                        bande.v_pt.push_back(b);
+                        bande.v_pt.push_back(c);
+                        bande.v_pt.push_back(d);
+
+//                        triangle1.a=3;
+//                        triangle1.b=1;
+//                        triangle1.c=0;
+
+//                        triangle2.a=1;
+//                        triangle2.b=3;
+//                        triangle2.c=2;
+
+//                        bande.v_triangle.push_back(triangle1);
+//                        bande.v_triangle.push_back(triangle2);
+
+                        bande.numero_strip=m_numero_bande;
+                        m_numero_bande++;
+
+                      Lg::Point3d o(d);
+                      Lg::Point3d u(DC_unitaire);
+
+
+
+                       Proj2D::PlaneOfProjection<double> pop(o,o + Lg::Point3f(u.X(),u.Y(),0),  o + Lg::Point3f(0, 0, 1));
+
+
+
+                       boost::shared_ptr<shape3d_hexaedre> hexa1=Lf::GenerateHexaedre(pop,
+                                                                                      pop.UCoord(c), pop.UCoord(d),
+                                                                                      pop.VCoord(c), pop.VCoord(a),
+                                                                                      -0.01,0.01 );
+
+                        hexa1->setDrawName(false);
+                        shape.addShape(hexa1);
+
+{
+//                        std::cout << "------------ "<< std::endl;
+//                        std::cout <<"Bande "<< i << std::endl;
+//                        std::cout <<"Point a" << a << std::endl;
+//                        std::cout <<"Point b" << b << std::endl;
+//                        std::cout <<"Point c" << c << std::endl;
+//                        std::cout <<"Point d" << d << std::endl;
+}
+                        my_mesh.v_strip.push_back(bande);
+                }
+           }
+
+
+
+       return my_mesh;
+
+   }
+
+
+
+   void
+   MeshNode(Lib3dsFile *f, Lib3dsNode *node, vector<MyMesh> & v_mesh, shape3d_file & shape)
+   {
+       Lib3dsNode *p;
+
+       for (p=node->childs; p!=0; p=p->next){
+           MeshNode(f, p, v_mesh,shape);
+       }
+
+       Lib3dsMesh *mesh=lib3ds_file_mesh_by_name(f,node->name);
+
+       if(!mesh) return;
+
+       if(mesh->name[0]=='F'){
+           string nameBloc=node->parent->parent->parent->parent->name;
+           string nameBC=node->parent->parent->parent->name;
+           string nameBS=node->parent->parent->name;
+
+           if(nameBloc[0]=='B'){v_mesh.push_back(CreateMesh(mesh,nameBC,nameBS,nameBloc,shape));} // Ajout de la condition car le fichier 3ds a parfois un défault de structure
+       }
+   }
+
+
+};
+
+//-----------------------------------------------------------------------------------------------------------//
+/*!                                            Ray_tracing!                                                */
+//-----------------------------------------------------------------------------------------------------------//
+
+
+class Ray_tracing{
+
+
+public :
+
+      vector<unsigned int> mv_numero_strip;
+      vector<double> m_v_range_virtuelle;
+      vector<KdTreeTriangleP *> m_vp_triangle;
+      vector<XPt3D> m_nuage_de_point;
+
+
+      vector<std::string> mv_facade; // liste des facades
+      vector<std::string> mv_bloc;  // liste des blocs
+
+      Ray_tracing(const vector<Reference<Primitive> > &primitive,XMls & mls){
+
+
+          KdTreeIntersection o_kdinter; /*! else, create a KdTreeIntersection object (inherit of Intersection class);*/
+          KdTreeIntersection * p_kdinter = & o_kdinter; /*! Get a pointer on this object;*/
+          Intersection * p_inter = (Intersection *) p_kdinter; /*! Cast this pointer on a Intersection's pointer;*/
+          KdTreeAccel * AccelTree; /*! Create a KdTreeAccel object => essential to build the Kd-tree;*/
+          ParamSet ps;  /*! Object used to set different and various parameter on the Kdtree => As default, parameters are initialized ;*/
+          AccelTree = CreateKdTreeAccelerator(primitive,ps); /*! Build the object AccelTree, ex : build the kd-tree with the primitive vector and the parameter object ;*/
+
+
+          KdTreeTriangleP * p_triangle;
+
+
+          for(XPulseIndex i_pulse=0; i_pulse<mls.NPulse(); i_pulse++)
+          {
+
+
+                 Lg::Point3d center_point(mls.Cworld(i_pulse).X,mls.Cworld(i_pulse).Y,mls.Cworld(i_pulse).Z); /*! Retrieve the center laser coordonates for the raytracing (this is not necessarily the center laser of Stereopolis);*/
+                 Lg::Point3d vec(mls.RayWorld(i_pulse).X,mls.RayWorld(i_pulse).Y,mls.RayWorld(i_pulse).Z);
+
+
+                 Point pbrt_point (center_point.X(),center_point.Y(),center_point.Z()); /*! Transform this Lg::Point3d to a PBRT Point;*/
+                 const Vector pbrt_vec (vec.X(),vec.Y(),vec.Z()); /*! Transform this Lg::Point to a PBRT Vector;*/
+                 Ray ray(pbrt_point,pbrt_vec,0.); /*! Build a PBRT ray with the origin and the director vector;*/
+
+                 bool test = false;
+
+                 if(AccelTree->Intersect(ray,p_inter)) /*! If the ray intersect primitives (stock all intersected primitives on a std::pair vector member of the class KdTreeIntersection;*/
+                {
+
+                      KdTreeIntersection::inter_pair_t best_inter_pair, inter_pair; /*! Create a std::pair(primitive, intersection);*/
+                      double best_x =std::numeric_limits<double>::max();/*! initialized a value to find best intersected primitive (minimum distance criterion);*/
+                      for(std::vector<KdTreeIntersection::inter_pair_t>::iterator it = p_kdinter->mv_inter_pair.begin(); it!=p_kdinter->mv_inter_pair.end(); it++) /*! Through the intersected primitives vector;*/
+                      {
+                          double x = (it->second - center_point)*vec; /*! Make this (produit scalaire) to find the nearest intersected primitive;*/
+                          double x_abs = (x<0?-x:x); /*! Just take the absolute value;*/
+                          inter_pair=*it;
+                          const Primitive * p_prim = inter_pair.first;
+
+
+                          if(x_abs < best_x) {  /*! Keep the nearest primitive;*/
+
+                               p_triangle = (KdTreeTriangleP*) p_prim; /*! Retrieve and cast the nearest primitive to a KdTreeTriangle object;*/
+                               best_x = x;
+                               best_inter_pair = *it;
+                               test = true;
+                          }
+
+
+                      }
+
+
+                      p_kdinter->mv_inter_pair.clear();
+
+                      if(test){
+
+                         m_vp_triangle.push_back(p_triangle);
+                         XPt3D Rayon(best_inter_pair.second.x()-center_point.x(),best_inter_pair.second.y()-center_point.y(),best_inter_pair.second.z()-center_point.z()) ;
+                         m_v_range_virtuelle.push_back(Rayon.Norme());
+
+                     }
+
+
+
+              }else{
+                    m_v_range_virtuelle.push_back(0);
+              }
+
+
+
+
+          }
+
+
+
+
+      }
+
+      Ray_tracing(const vector<Reference<Primitive> > &primitive,XMls & mls,vector<XPt3D> &v_point_cloud_perturbation){
+
+
+
+
+
+          KdTreeIntersection o_kdinter; /*! else, create a KdTreeIntersection object (inherit of Intersection class);*/
+          KdTreeIntersection * p_kdinter = & o_kdinter; /*! Get a pointer on this object;*/
+          Intersection * p_inter = (Intersection *) p_kdinter; /*! Cast this pointer on a Intersection's pointer;*/
+          KdTreeAccel * AccelTree; /*! Create a KdTreeAccel object => essential to build the Kd-tree;*/
+          ParamSet ps;  /*! Object used to set different and various parameter on the Kdtree => As default, parameters are initialized ;*/
+          AccelTree = CreateKdTreeAccelerator(primitive,ps); /*! Build the object AccelTree, ex : build the kd-tree with the primitive vector and the parameter object ;*/
+
+
+          KdTreeTriangleP * p_triangle;
+
+          for(XPulseIndex i_pulse=0; i_pulse<mls.NPulse(); i_pulse++)
+          {
+
+
+                 Lg::Point3d center_point(mls.Cworld(i_pulse).X,mls.Cworld(i_pulse).Y,mls.Cworld(i_pulse).Z); /*! Retrieve the center laser coordonates for the raytracing (this is not necessarily the center laser of Stereopolis);*/
+                 Lg::Point3d vec(mls.RayWorld(i_pulse).X,mls.RayWorld(i_pulse).Y,mls.RayWorld(i_pulse).Z);
+
+
+                 Point pbrt_point (center_point.X(),center_point.Y(),center_point.Z()); /*! Transform this Lg::Point3d to a PBRT Point;*/
+                 const Vector pbrt_vec (vec.X(),vec.Y(),vec.Z()); /*! Transform this Lg::Point to a PBRT Vector;*/
+                 Ray ray(pbrt_point,pbrt_vec,0.); /*! Build a PBRT ray with the origin and the director vector;*/
+
+                 bool test = false;
+
+                 if(AccelTree->Intersect(ray,p_inter)) /*! If the ray intersect primitives (stock all intersected primitives on a std::pair vector member of the class KdTreeIntersection;*/
+                {
+
+                      KdTreeIntersection::inter_pair_t best_inter_pair, inter_pair; /*! Create a std::pair(primitive, intersection);*/
+                      double best_x =std::numeric_limits<double>::max();/*! initialized a value to find best intersected primitive (minimum distance criterion);*/
+                      for(std::vector<KdTreeIntersection::inter_pair_t>::iterator it = p_kdinter->mv_inter_pair.begin(); it!=p_kdinter->mv_inter_pair.end(); it++) /*! Through the intersected primitives vector;*/
+                      {
+                          double x = (it->second - center_point)*vec; /*! Make this (produit scalaire) to find the nearest intersected primitive;*/
+                          double x_abs = (x<0?-x:x); /*! Just take the absolute value;*/
+                          inter_pair=*it;
+                          const Primitive * p_prim = inter_pair.first;
+
+
+                          if(x_abs < best_x) {  /*! Keep the nearest primitive;*/
+
+                               p_triangle = (KdTreeTriangleP*) p_prim; /*! Retrieve and cast the nearest primitive to a KdTreeTriangle object;*/
+                               best_x = x;
+                               best_inter_pair = *it;
+                               test = true;
+                          }
+
+
+                      }
+
+
+                      p_kdinter->mv_inter_pair.clear();
+
+                      if(test){
+
+                         XPt3D point =v_point_cloud_perturbation[i_pulse];
+                         Lg::Point3d Point(point.X,point.Y,point.Z);
+                         p_triangle->setPi(Point);                      
+
+                         SbetEvent sbt=mls.Sbet(mls.IdxFirstEcho(i_pulse));
+
+                         int Index_evenement_avant=mls.m_trajecto.AccuracySeries().PrevIndex(sbt.m_time);
+
+
+                         double temp_avant = mls.m_trajecto.AccuracySeries().Event(Index_evenement_avant).m_time;
+                         double temp_apres = mls.m_trajecto.AccuracySeries().Event(Index_evenement_avant+1).m_time;
+                         double temp_point = sbt.m_time;
+
+                         double alpha= (temp_point-temp_avant)/(temp_apres-temp_avant);
+
+                         p_triangle->setAlpha(alpha);
+                         p_triangle->setPrevIndex(Index_evenement_avant);
+
+                         m_vp_triangle.push_back(p_triangle);
+                         XPt3D Rayon(best_inter_pair.second.x()-center_point.x(),best_inter_pair.second.y()-center_point.y(),best_inter_pair.second.z()-center_point.z()) ;
+                         m_v_range_virtuelle.push_back(Rayon.Norme());
+
+                         mv_facade.push_back(p_triangle->m_nom_facade);
+                         mv_bloc.push_back(p_triangle->m_nom_du_bloc);
+
+                         mv_numero_strip.push_back(p_triangle->numero_patch);
+
+//                         std::cout << Index_evenement_avant << std::endl;
+
+                     }
+
+
+              }else{
+
+                    m_v_range_virtuelle.push_back(0);
+
+              }
+
+
+
+
+          }
+
+
+          sort(m_vp_triangle.begin(),m_vp_triangle.end(),trier_par_patch);
+          sort(m_vp_triangle.begin(),m_vp_triangle.end(),trier_par_facade);       
+          sort(m_vp_triangle.begin(),m_vp_triangle.end(),trier_par_bloc);
+
+
+          sort(mv_facade.begin(),mv_facade.end(),trier_par_facade_string);
+          auto last = std::unique(mv_facade.begin(), mv_facade.end(), myfunction_string);
+          mv_facade.erase(last, mv_facade.end());
+
+          sort(mv_numero_strip.begin(),mv_numero_strip.end(),trier_par_numero_patch);
+          auto last2 = std::unique(mv_numero_strip.begin(), mv_numero_strip.end(),my_function_patch);
+          mv_numero_strip.erase(last2, mv_numero_strip.end()); // connaitre la liste des numeros de patch : chaque patch a un numero unique
+
+          sort(mv_bloc.begin(),mv_bloc.end(),trier_par_bloc_string);
+          auto last3 = std::unique(mv_bloc.begin(), mv_bloc.end(), myfunction_string);
+          mv_bloc.erase(last3, mv_bloc.end());
+
+
+
+
+      }
+
+
+
+};
+
+
+
+
+class Perturbation_modele_bati3D{
+
+public :
+
+
+      Lib3dsFile *m_file;
+      double sigma_bloc=1.;  // Ecart-type translation bloc
+      double sigma_facade=0.1;  // Ecart-type translation facade
+
+      /*! Fournir le fichier 3DS et la liste des triangles pour bouger les facades  !*/
+
+      Perturbation_modele_bati3D(Lib3dsFile *f, vector<KdTreeTriangleP*> & vp_triangle,bool test= true){
+
+          if(test) m_file=f;
+          else{
+              sort(vp_triangle.begin(),vp_triangle.end(),trier_par_facade);
+              auto last = std::unique(vp_triangle.begin(), vp_triangle.end(), myfunction);
+
+              // supprimer les doublons (meme nom de facade)
+              vp_triangle.erase(last, vp_triangle.end());
+              sort(vp_triangle.begin(),vp_triangle.end(),trier_par_bloc);
+
+              //Supprimer tous les toits
+              auto itera= std::remove_if(vp_triangle.begin(),vp_triangle.end(),selection_toit);
+              vp_triangle.erase(itera, vp_triangle.end());
+
+
+
+              for(Lib3dsNode *node=f->nodes; node; node=node->next){
+
+                     perturbation(f, node,vp_triangle);
+              }
+              /*! Parcours le fichier lib3DS et ajoute une translation par facade et par bloc de batiment !*/
+              m_file=f;
+
+          }
+
+      }
+
+private :
+
+
+void perturbation(Lib3dsFile *f, Lib3dsNode *node, vector<KdTreeTriangleP*> & v_triangle )
+{
+          Lib3dsNode *p;
+          for (p=node->childs; p!=0; p=p->next){
+
+              if(p->name[0]=='B'){ // A chaque bloc une Translation 2D differente
+
+                 Eigen::Vector2d translation=translation2D(sigma_bloc);
+                 Tx=translation[0];
+                 Ty=translation[1];
+             }
+              perturbation(f, p, v_triangle);
+          }
+
+          Lib3dsMesh *mesh=lib3ds_file_mesh_by_name(f,node->name);
+
+          if(!mesh) return;
+          unsigned int indice=0; // va nous servir à récuperer la normale du triangle de la facade
+
+          if(mesh->name[0]=='F' ){ // On ne perturbe que les facade pas les toits
+
+              string nameBloc=node->parent->parent->parent->parent->name;
+              string nameBC=node->parent->parent->parent->name;
+              string nameBS=node->parent->parent->name;
+
+
+              if( existsFacade(mesh->name, v_triangle, indice) ){ // Si la facade a été touché par le Ray-tracing
+
+                  double nx =v_triangle[indice]->GetTriangleNormal()[0]; // Normal à la facade suivant x
+                  double ny=v_triangle[indice]->GetTriangleNormal()[1];   // Normal à la facade suivant y
+
+                  for (unsigned int i=0; i<mesh->points; ++i)
+                  {
+//                      double sigma = 0.1;
+
+                      Eigen::VectorXd translation=translation2D(sigma_facade);
+
+                      double tx =translation[0];
+                      double ty=translation[1];
+
+                      mesh->pointL[i].pos[0]=mesh->pointL[i].pos[0]+tx*nx;
+                      mesh->pointL[i].pos[1]=mesh->pointL[i].pos[1]+ty*ny;
+
+                  }
+
+               }
+
+         }
+
+          if( mesh->name[0]=='F' || mesh->name[0]=='T' ){
+
+              string nameBloc=node->parent->parent->parent->parent->name;
+              string nameBC=node->parent->parent->parent->name;
+              string nameBS=node->parent->parent->name;
+
+              if(existsBloc(nameBloc,v_triangle)){
+                  for (unsigned i=0; i<mesh->points; ++i)
+                  {
+                      mesh->pointL[i].pos[0]=mesh->pointL[i].pos[0]+Tx;
+                      mesh->pointL[i].pos[1]=mesh->pointL[i].pos[1]+Ty;
+                  }
+              }
+          }
+
+      }
+
+
+
+
+
+};
+
+
+
+
+
+class Resolution_systeme{
+
+public :
+    /*!
+
+Model of constraint between the observations only : g(l)=0
+
+     g(l)=∑(Q -P +T ).nf +of + s =0
+
+     where :
+     T_{b} block translation T_{b}=[Tx Ty Tz]^{T} and b is the block index, Tx and Ty are the observations
+     Q^{b}_{j} Point of the facade
+     P_{i} is the laser point The are three observations : The position of the vehicule (in the direction x, y and Z)
+     t_j is an scalar. And it's an observation
+
+     Linear Model : B^T v = Cg
+     where:
+           B  = ((∂g/ ∂l)|l=l(0))^T is the matrix of partial derivatives with respect to observations
+           v  = Cll B (B^T Cll B)^(-1) Cg
+           Cg = -g(l(0))- B^T (l-l(0)) is the correction vector
+           Cll is the covariance matrice of observations
+           l is the observations vector and l(0) is initial vector
+
+    !*/
+
+    Eigen::SparseMatrix<double> m_Cll;// Matrice creuse
+
+    Eigen::SparseMatrix<double> m_B_transpose,m_B;
+    Eigen::VectorXd m_l,m_l0,m_Cg,m_gl0,m_v;
+
+    unsigned int nombre_de_bloc;
+    unsigned int nombre_de_facade;
+    unsigned int nombre_de_point;
+    unsigned int nombre_de_patch;
+    unsigned int nombre_event;
+
+
+    double sigmaFacade; // Incertitude identique pour toutes les facades (Necessaire dans la matrice de covariance des observations) Défault 10 cm
+    double sigmaBloc;   // Incertitude identique pour tous les blocs (Necessaire dans la matrice de covariance des observations)      Défault 1m
+    double sigmaStrip;  // Incertitude identique pour tous les Strip (Necessaire dans la matrice de covariance des observations)     Défault 20 cm
+
+    Resolution_systeme(const Ray_tracing & ray_tracing, XMls & mls,const double & sigma_facade =0.,const double & sigma_bloc =0.,const double & sigma_strip =0. ) :
+    nombre_de_bloc(ray_tracing.mv_bloc.size()),nombre_de_facade(ray_tracing.mv_facade.size()),
+    nombre_de_point(ray_tracing.m_vp_triangle.size()), nombre_de_patch(ray_tracing.mv_numero_strip.size()), nombre_event(mls.m_trajecto.AccuracySeries().Nevent() /*on travaille à 1Hz*/),
+    sigmaFacade(sigma_facade),sigmaBloc(sigma_bloc),sigmaStrip(sigma_strip)
+    {
+
+
+
+        setMatrice_B(ray_tracing,mls); // Initialise la matrice m_B
+        setMatrice_Cll(ray_tracing,mls); // Initialise la matrice m_Cll
+        setMatrice_g_l0(ray_tracing); // Initialise la fonction m_gl0
+
+//        cout <<"Test1" <<endl;
+//        setMatrice_l_and_l0(ray_tracing,mls); //Initialise la fonction m_l et m_l0
+
+
+
+
+       m_Cg=-1*m_gl0;
+
+       Eigen::SparseMatrix<double> M = m_B_transpose*m_Cll*m_B;
+
+       Eigen::MatrixXd M_dense=toDense(M);
+
+
+//       cout << M_dense.determinant() << endl;
+
+       Eigen::MatrixXd M_dense_inverse=M_dense.inverse();
+
+       Eigen::SimplicialLDLT<Eigen::SparseMatrix<double> > solver;
+       solver.compute(M);
+
+
+
+       if(solver.info()!=Eigen::Success) {
+            cout << "Oh: Very bad" << endl;
+       }
+
+       Eigen::SparseMatrix<double> Id(M.rows(),M.rows());
+       Id.setIdentity();
+
+       cout << solver.determinant() << endl;
+
+       Eigen::SparseMatrix<double> M_inverse = solver.solve(Id);
+
+       Eigen::MatrixXd identite( M_dense.rows() , M_dense.rows() );
+
+       identite.setIdentity();
+
+       Eigen::MatrixXd AA=(M_dense*M_dense_inverse-identite);
+
+
+
+       m_v=m_Cll*m_B*M_inverse*m_Cg;
+
+//       cout << m_v <<endl;
+
+//       std::cout << nombre_event <<std::endl;
+
+//       exit(1);
+
+
+       for(unsigned int i=0; i< m_v.size() ; ++i)
+            std::cout << m_v[i] << endl;
+
+
+
+
+
+
+//       for( unsigned int i=0 ; i<nombre_event;i++){
+
+//                 XPt3D erreur(m_v[2*i],m_v[2*i+1],0.);
+
+//                 mls.m_trajecto.SbetSeries().ApplyTranslation(i,erreur);
+//       }
+
+       for(int i=0;i<mls.m_trajecto.SbetSeries().Nevent();i++){
+
+
+           double t=mls.m_trajecto.SbetSeries().Event(i).m_time;
+
+           int evt= mls.m_trajecto.AccuracySeries().PrevIndex(t);
+           int evt1=evt+1;
+
+           double t_moins=mls.m_trajecto.AccuracySeries().Event(evt).m_time;
+           double t_plus=mls.m_trajecto.AccuracySeries().Event(evt+1).m_time;
+
+           XPt3D erreur_moins(m_v[2*evt],m_v[2*evt+1],/*PointPerturbe(evt*3+2)*/0.);
+           XPt3D erreur_plus(m_v[2*evt1],m_v[2*evt1+1],0./*PointPerturbe(evt1*3+2)*/);
+
+           XPt3D erreur=interpolationErreur(erreur_plus,erreur_moins,t_plus,t_moins,t);
+           erreur.Z=0.;
+
+           mls.m_trajecto.SbetSeries().ApplyTranslation(i,erreur);
+      }
+
+
+
+//       m_l=m_l+m_v;
+//       m_Cg=-m_gl0-(m_B.transpose()*(m_l-m_l0));
+//       m_v=m_Cll*m_B*(m_B.transpose()*m_Cll*m_B)*m_Cg;
+
+    }
+
+private :
+         void setMatrice_l_and_l0(const Ray_tracing & ray_tracing,XMls & mls){
+
+{
+//             Eigen::VectorXd l0(nombre_event*3+nombre_de_facade+nombre_de_bloc*2+nombre_de_patch);
+//             l0.setZero();
+
+//             for(unsigned int i =0; i<nombre_event;i++){
+
+////                  l0.coeffRef(2*j)=mls.;
+////                  l0.coeffRef(2*j+1)=mls.m_sensor_georef.Translation().Y;
+
+//            }
+
+
+//                    m_l=l0;
+//                    m_l0=l0;
+}
+         }
+
+
+      void setMatrice_g_l0(const Ray_tracing & ray_tracing){
+
+          Eigen::VectorXd g_l0(nombre_de_patch);
+          g_l0.setZero();
+
+          for(unsigned int i =0; i<nombre_de_point;i++){
+
+               KdTreeTriangleP * trianglePoint = ray_tracing.m_vp_triangle[i];
+
+               Lg::Point3d Point_facade = trianglePoint->A();                  // Correspond à un point du strip
+               Lg::Point3d Point_laser = trianglePoint->Pi;                    // Correspond au point apparié au strip
+               Lg::Point3d normale_patch = trianglePoint->GetTriangleNormal(); //  Normale au strip
+
+               const unsigned int & numero_patch = trianglePoint->numero_patch;
+               const unsigned int & j = index_strip( ray_tracing.mv_numero_strip ,numero_patch );  // Position dans le vecteur
+
+               g_l0.coeffRef(j) += (Point_facade-Point_laser)*normale_patch;
+
+         }
+
+         m_gl0=g_l0;
+
+
+      }
+
+
+      /*!
+       * Matrice de covariance des observations Cll =[Cll_trajectoire   0        0          0      ]
+       *                                             [   0          Cll_facade   0          0      ]
+       *                                             [   0              0       Cll_bloc    0      ]
+       *                                             [   0              0        0      Cll_strip  ]
+       *
+       * Cll_trajectoire -> Sous-Matrice de covariance des observations sur la trajectoire
+       * Cll_facade -> Sous-Matrice de covariance des observations sur les facades
+       * Cll_bloc ->  Sous-Matrice de covariance des observations sur les blocs
+       * Cll_strip ->  Sous-Matrice de covariance des observations sur les strip
+       *
+       !*/
+
+     void setMatrice_Cll(const Ray_tracing & ray_tracing,XMls & mls){
+
+                Covariance covar(mls.m_trajecto,1.,1.,1.);
+
+                Eigen::SparseMatrix<double> Cll_trajectoire=covar.getCovarianceXY();
+
+                Eigen::SparseMatrix<double> Cll_facade(nombre_de_facade,nombre_de_facade);
+                Cll_facade.setZero();
+
+                for(unsigned int i =0; i<nombre_de_facade;i++){
+
+                           Cll_facade.coeffRef(i,i)=sigmaFacade*sigmaFacade;
+
+                }
+
+
+                Eigen::SparseMatrix<double> Cll_bloc(nombre_de_bloc*2,nombre_de_bloc*2);
+                Cll_bloc.setZero();
+
+                for(unsigned int i =0; i<nombre_de_bloc;i++){
+
+                        const unsigned int & k=2*i;
+                        Cll_bloc.coeffRef(k,k)=sigmaBloc*sigmaBloc;
+                        Cll_bloc.coeffRef(k+1,k+1)=sigmaBloc*sigmaBloc;
+
+                }
+
+
+                Eigen::SparseMatrix<double> Cll_strip(nombre_de_patch,nombre_de_patch);
+                Cll_strip.setZero();
+
+                for(unsigned int i =0; i<nombre_de_patch;i++){
+
+                       Cll_strip.coeffRef(i,i)=sigmaStrip*sigmaStrip;
+
+                }
+
+
+                m_Cll=blkdiag(Cll_trajectoire, Cll_facade, Cll_bloc, Cll_strip); // Prend les 4 matrices et construit une nouvelle matrice avec à la diagonale ces 4 matrices
+
+     }
+
+
+
+
+     Eigen::MatrixXd toDense(const Eigen::SparseMatrix<double> &input) {
+       Eigen::MatrixXd output(input.rows(), input.cols());
+       for (int k = 0; k < input.outerSize(); ++k) {
+         for (Eigen::SparseMatrix<double>::InnerIterator it(input,k); it; ++it) {
+           double value = input.coeff(it.row(), it.col());
+           output(it.row(), it.col()) = value;
+         }
+       }
+       return output;
+
+     }
+
+     // Retourne l'incertitude  de la position du vehicule en lamb 93   Position à l'évenement i
+     Lg::Point3d incertitude_trajectoire(XMls & mls,const unsigned int & i){
+
+         SbetEvent sbetEvent= mls.m_trajecto.SbetSeries().Event(i);
+
+         const double & t=sbetEvent.m_time;
+
+         const int & evt= mls.m_trajecto.AccuracySeries().PrevIndex(t);
+
+         const int & evt1=evt+1;
+
+         AccuracyEvent acc_event= mls.m_trajecto.AccuracySeries().Event(evt);
+         AccuracyEvent acc_event1= mls.m_trajecto.AccuracySeries().Event(evt1);
+
+         AccuracyEvent accuracy_courant=Interpol(acc_event,acc_event1,t); // Incertitude à l'instant t
+
+//---------------Propagation uncertainty repere NEB -> LAMB 93 -----------//
+         // Erreur dans le repere NEB
+         Eigen::Matrix3d Position_uncertainty_vehicule;
+         Position_uncertainty_vehicule << accuracy_courant.m_northPositionRMSError*accuracy_courant.m_northPositionRMSError,0,0,
+                                         0,accuracy_courant.m_eastPositionRMSError*accuracy_courant.m_eastPositionRMSError,0,
+                                         0,0,accuracy_courant.m_downPositionRMSError*accuracy_courant.m_downPositionRMSError; // Matrice covariance de la position du vehicule (LAMB93)
+
+        Eigen::Matrix3d NEB_ENH;
+        NEB_ENH<<0.,1.,0.,
+                 1.,0.,0.,
+                 0.,0.,-1.;
+
+       const double & conv =-mls.m_trajecto.SbetSeries().GetConvMeridien(sbetEvent);
+       double cos_conv=cos(conv),sin_conv=sin(conv);
+
+        Eigen::Matrix3d Rconv;
+        Rconv << cos_conv,-sin_conv,0,
+                 sin_conv,cos_conv,0,
+                 0,0,1;
+
+        Eigen::Matrix3d A;
+
+        A=Rconv*NEB_ENH;
+        Position_uncertainty_vehicule=A*Position_uncertainty_vehicule*A.transpose();
+
+        Lg::Point3d Pos_uncertainty_lamb93(sqrt(Position_uncertainty_vehicule(0,0)),sqrt(Position_uncertainty_vehicule(1,1)),sqrt(Position_uncertainty_vehicule(2,2)));
+
+        return Pos_uncertainty_lamb93;
+     }
+
+     // Dans la matrice B, les facades , les blocs et patch sont dans un ordre selon le vecteur fournit par la classe raytracing : les vecteurs ray_tracing.mv_numero_strip ray_tracing.mv_facade et ray_tracing.mv_bloc
+     void setMatrice_B(const Ray_tracing & ray_tracing,XMls & mls){
+
+             // La matrice m_B=[B|C|D|E]^T
+             Eigen::SparseMatrix<double> B(nombre_de_patch,nombre_event*2); // Dérivée de g par rapport à la trajectoire à 100Hz
+             B.setZero();
+             Eigen::SparseMatrix<double> C(nombre_de_patch,nombre_de_facade); // Dérivée de g par rapport au facade
+             C.setZero();
+             Eigen::SparseMatrix<double> D(nombre_de_patch,nombre_de_bloc*2); // Dérivée de g par rapport au bloc  btx bty
+             D.setZero();
+             Eigen::SparseMatrix<double> E(nombre_de_patch,nombre_de_patch);  // Dérivée de g par rapport au patch
+             E.setZero();
+
+             for(unsigned int k =0; k<nombre_de_point;k++){
+
+                    KdTreeTriangleP * KdTreeTrianglePoint = ray_tracing.m_vp_triangle[k]; // L'appariemment point-triangle issue du ray-tracing
+
+                    const unsigned int & j = index_strip(ray_tracing.mv_numero_strip, KdTreeTrianglePoint->numero_patch);         // Indice du strip
+                    const unsigned int & b = index_in_vector_string( ray_tracing.mv_facade, KdTreeTrianglePoint->m_nom_facade);    // Indice de la facade ray_tracing.mv_facade-> Les facades sont dans un certain ordre
+                    const unsigned int & i = KdTreeTrianglePoint->getPrevIndex();                                                // Indice de l'évenement T- de la trajectoire
+//                    if(k%100) cout << "Evenement trajectoire : "<< i <<endl;
+                    const unsigned int & d = index_in_vector_string( ray_tracing.mv_bloc, KdTreeTrianglePoint->m_nom_du_bloc);
+
+                    const double & alpha = KdTreeTrianglePoint->alpha;                                                 //  Un point P= Pi + (1-alpha)T- + alpha T+
+                    const Lg::Point3d & nf = KdTreeTrianglePoint->GetTriangleNormal();                                 //  Normal au patch
+
+                    Lg::Point3d derivation_by_trajectory_i = (alpha-1)*nf;  // Dérivée de g par rapport à T-
+                    Lg::Point3d derivation_by_trajectory_i1 = (-alpha)*nf;   // Dérivée de g par rapport à T+
+
+                    B.coeffRef(j,2*i)   += derivation_by_trajectory_i.x();
+                    B.coeffRef(j,2*i+1) += derivation_by_trajectory_i.y();
+                    B.coeffRef(j,2*i+2) += derivation_by_trajectory_i1.x();
+                    B.coeffRef(j,2*i+3) += derivation_by_trajectory_i1.y();
+
+                    C.coeffRef(j,b) += 1.;
+
+                    D.coeffRef(j,2*d) += nf.x();
+                    D.coeffRef(j,2*d+1) += nf.y();
+
+                    E.coeffRef(j,j) += 1.;
+             }
+
+             Eigen::SparseMatrix<double> BCDE=hcat(B,C,D,E);
+             m_B_transpose=BCDE;
+             m_B= BCDE.transpose();
+     }
+
+      // Ou se trouve value (unsigned int) dans le vecteur ?
+      unsigned int index_strip(const vector<unsigned int> & mv_numero_strip,const unsigned int & value){
+
+         auto o=find(mv_numero_strip.begin(),mv_numero_strip.end(),value);
+
+         unsigned int indice_strip;
+
+         if (o != mv_numero_strip.end()){
+
+                 indice_strip= distance(mv_numero_strip.begin(), o);
+
+         }else{
+
+                 std::cout<< RED <<__FUNCTION__<<" ....  "<< "Le patch "<< value << " n'est pas dans le vecteur (mv_numero_strip) "  <<  "...."<<std::endl;
+                 exit(1);
+         }
+
+         return indice_strip ;
+
+     }
+
+     // Ou se trouve value (string) dans le vecteur ?
+     unsigned int index_in_vector_string(const vector<std::string> & mv,const std::string & value){
+
+          auto o1=find(mv.begin(),mv.end(),value);
+
+          unsigned int indice;
+
+          if (o1 != mv.end())
+          {
+               indice= distance(mv.begin(), o1); // On récupère l'index de la facade
+
+          }else{
+
+              std::cout<< RED <<__FUNCTION__<<" ....  "<< "La valeur "<< value << " n'est pas dans le vecteur (mv) "  <<  "...."<<std::endl;
+              exit(1);
+          }
+
+          return indice;
+    }
+
+     //Permet de concaténer 2 matrices creuses à l'horizontale
+     void hcat(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B, Eigen::SparseMatrix<double>& result) {
+      assert(A.rows() == B.rows());
+      result = Eigen::SparseMatrix<double>(A.rows(), A.cols() + B.cols());
+      result.middleCols(0,A.cols()) = A;
+      result.middleCols(A.cols(), B.cols()) = B;
+    }
+
+     Eigen::SparseMatrix<double> hcat(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B) {
+
+      Eigen::SparseMatrix<double> r;
+      hcat(A, B, r);
+      return r;
+    }
+
+     // Concaténation horizontales des matrices creuses A B C D
+      Eigen::SparseMatrix<double> hcat(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B,const Eigen::SparseMatrix<double>& C,const Eigen::SparseMatrix<double>& D) {
+
+      Eigen::SparseMatrix<double> r1,r2,r3;
+
+      hcat(A, B, r1);    // r1=[A|B]
+      hcat(C, D, r2);   // r2=[C|D]
+      hcat(r1,r2,r3);   // r3=[r1|r2]=[A|B|C|D]
+
+      return r3;
+    }
+
+
+
+       //Permet de concaténer 2 matrices creuses à la verticale
+      void vcat(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B, Eigen::SparseMatrix<double,Eigen::RowMajor>& result) {
+        assert(A.cols() == B.cols());
+        result = Eigen::SparseMatrix<double,Eigen::RowMajor>(A.rows() + B.rows(), A.cols());
+
+        result.middleRows(0,A.rows()) = A;
+        result.middleRows(A.rows(), B.rows()) = B;
+      }
+
+     Eigen::SparseMatrix<double> vcat(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B) {
+       Eigen::SparseMatrix<double,Eigen::RowMajor> r;
+       vcat(A, B, r);
+       return r;
+     }
+
+       //Permet de construire une matrice creuse  en mettant 2 matrices en block à la diagonale
+      void blkdiag(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B, Eigen::SparseMatrix<double,Eigen::RowMajor>& result) {
+       // concatenate A horizontally with a block of zeros of size (A.rows, B.cols)
+       Eigen::SparseMatrix<double>block21(A.rows(), B.cols());
+       Eigen::SparseMatrix<double>block1;
+       hcat(A, block21, block1);
+       // concatenate B horizontally with a block of zeros of size (B.rows, A.cols)
+       Eigen::SparseMatrix<double>block12(B.rows(), A.cols());
+       Eigen::SparseMatrix<double>block2;
+       hcat(block12, B, block2);
+       // vertically concatenate the two blocks
+       vcat(block1, block2, result);
+     }
+
+      Eigen::SparseMatrix<double> blkdiag(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B) {
+       Eigen::SparseMatrix<double,Eigen::RowMajor> r;
+       blkdiag(A, B, r);
+       return r;
+     }
+
+      Eigen::SparseMatrix<double> blkdiag(const Eigen::SparseMatrix<double>& A, const Eigen::SparseMatrix<double>& B,const Eigen::SparseMatrix<double>& C,const Eigen::SparseMatrix<double>& D) {
+
+       Eigen::SparseMatrix<double,Eigen::RowMajor> r1,r2,r3;
+       blkdiag(A, B, r1);
+       blkdiag(C, D, r2);
+
+       blkdiag(r1,r2,r3);
+
+       return r3;
+     }
+
+
+
+
+
+
+
+};
+
+
+
+void CreationPlyTrajectoire(const std::string & nameFichier, XMls & mls,const double & pivot_E,const double & pivot_N){
+
+
+    string file_name(nameFichier);
+    ofstream fileOut(file_name.c_str());
+    if(!fileOut.good())
+    {
+            cout << "Cannot open " + file_name + " for writing\n";
+            exit(1);
+//            return 3;
+    }
+
+        // write text header
+    fileOut << "ply\nformat binary_little_endian 1.0" << endl;
+    fileOut << "comment Generated with RieglFlexport" << endl;
+    fileOut << "comment IGN offset Pos " << pivot_E << " " << pivot_N << " 0" << endl;
+
+    const int & nb= mls.m_trajecto.SbetSeries().Nevent();
+
+    fileOut << "element vertex " << nb << endl;
+    fileOut << "property " << "float64" << " " << "t" << endl;
+    fileOut << "property " << "float32" << " " << "x" << endl;
+    fileOut << "property " << "float32" << " " << "y" << endl;
+    fileOut << "property " << "float32" << " " << "z" << endl;
+
+    fileOut << "end_header" << endl;
+
+    unsigned long buffer_size = 20 * nb;
+    char * buffer = new char[buffer_size], * it = buffer;
+
+//    cout << "----------------------"<<endl;
+
+    for(int i=0; i<nb; i++)
+    {
+             const double & time=mls.m_trajecto.SbetSeries().Event(i).m_time;
+
+             XPt3D Oworld=mls.Oworld(time);
+
+             Write<double>(it, time);
+             Write<float>(it, Oworld.X-pivot_E);
+             Write<float>(it, Oworld.Y-pivot_N);
+             Write<float>(it, Oworld.Z);
+   }
+
+    fileOut.write(buffer, buffer_size); // todo: split buffer if too big
+    fileOut.close();
+    delete buffer;
+
+
+}
+
+int main(int argc, char **argv)
+{
+    if(argc < 7)
+    {
+        // TODO: xml to store additionally the coord system and list of attribs to store
+        cout << "Flexible .ply file export" << endl;
+        cout << "Usage: " << argv[0] << "  sbet_folder sbet_mission laser_calib.xml ept_folder attrib.txt out_name.ply [(int)start_time (int)end_time pivot_E pivot_N]" << endl;
+        cout << "sbet_folder: folder where the sbet files are" << endl;
+        cout << "sbet_mission: common part of all filenames relevant to the same trajectory" << endl;
+        cout << "laser_calib.xml: calibration file for the laser" << endl;
+        cout << "ept_folder: folder containing the echo pulse tables (generated with EptExport)" << endl;
+        cout << "(start|end)_time: start and end time of the laser points to export (default=everything)" << endl;
+        cout << "3D model (Bati3D)"<<endl;
+        return 0;
+    }
+
+    int i_arg=1;
+    // required
+    string sbet_folder(argv[i_arg++]);
+    string sbet_mission(argv[i_arg++]);
+    string laser_calib(argv[i_arg++]);
+    string ept_folder(argv[i_arg++]);
+
+    // optional
+    int i_start = -1, i_end = -1;
+    if(i_arg < argc) i_start = atoi(argv[i_arg++]);
+    if(i_arg < argc) i_end = atoi(argv[i_arg++]);
+    cout.precision(16);
+
+    clock_t start = clock();
+    XMlsUnc mls(ept_folder, laser_calib, sbet_folder, sbet_mission);
+
+    mls.Load(i_start, i_end);
+
+    XArchiGeoref G = mls.m_trajecto.SbetSeries().GetGeoref(0); // Le point pivot est par défault le 1er point de la trajectoire
+    float pivot_E = 100*(int)(G.Translation().X/100);
+    float pivot_N = 100*(int)(G.Translation().Y/100);
+
+    start = clock();
+
+    const Lg::Point3d pivot_bati3D(651250.,6861250,69.95);
+
+    Lib3dsFile *f = lib3ds_file_load(argv[i_arg++]);
+
+    shape3d_file shape;
+
+    Modele_Bati3D modele_Bati3D(f,pivot_bati3D,shape);
+
+    shape.save("patch.m3d");
+
+    Ray_tracing ray_tracing(modele_Bati3D.m_vref_triangle,mls);
+
+    Perturbation_modele_bati3D Perturbation_modele_bati3D(f,ray_tracing.m_vp_triangle,true); // Perturbation modele Bati3D
+
+    Lib3dsFile *Modele_Bati_perturbation=Perturbation_modele_bati3D.m_file;
+
+    Lib3dsFile * file = lib3ds_file_new();  // Nouveau fichier 3ds
+
+    file->meshes=Modele_Bati_perturbation/*f*/->meshes;    //On récupère les maillages
+
+    lib3ds_file_insert_node(file,Modele_Bati_perturbation->nodes); // Dans le fichier file, on insère le noeud root.
+
+    lib3ds_file_save(file,"Perturbation_Bati3D.3DS"); // Sauvegarde du fichier
+
+     CreationPlyTrajectoire("TrajectoireNonPerturber.ply",mls,pivot_E,pivot_N);
+
+     perturbation_trajectoire(mls,1.,1.,1.); // On perturbe la trajectoire dans l'objet mls
+
+     CreationPlyTrajectoire("TrajectoirePerturber.ply",mls,pivot_E,pivot_N);
+
+     shape3d_file shape2;
+
+    Modele_Bati3D modele_Bati3D_V2(Modele_Bati_perturbation,pivot_bati3D,shape2);
+
+    shape2.save("patch2.m3d");
+
+
+    vector<XPt3D> v_point_cloud_perturbation;
+
+    for(XPulseIndex i_pulse=0; i_pulse<mls.NPulse(); i_pulse++)
+    {
+
+        v_point_cloud_perturbation.push_back(mls.Pworld(i_pulse,ray_tracing.m_v_range_virtuelle[i_pulse]));
+
+    }
+
+
+     Ray_tracing ray_tracing_V2(modele_Bati3D_V2.m_vref_triangle_patch,mls,v_point_cloud_perturbation);
+
+///////*! -------------------------------Calcul du nouveau nuage de point bruité ----------------------------------------------!*/
+
+     Resolution_systeme resolution(ray_tracing_V2,mls,0.15,1.,0.2);
+
+     CreationPlyTrajectoire("TrajectoireRecaler.ply",mls,pivot_E,pivot_N);
+
+////    /*!----------------Ecrire dans un ply---------------------------!*/
+
+
+
+    cout << "Done in " << (double)(clock() - start) / (double) CLOCKS_PER_SEC << "s" << endl;
+    return 0;
+}
