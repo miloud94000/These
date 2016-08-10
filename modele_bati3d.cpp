@@ -1,3 +1,102 @@
+#ifndef __MODELBATI_H__
+#define __MODELBATI_H__
+
+//-----------------------------------------------------------------------------------------------------------//
+/*!                                            Modele Bati3D!                                                */
+//-----------------------------------------------------------------------------------------------------------//
+
+#include <iostream>
+#include <fstream>
+
+#include <lib3ds/file.h>
+#include <lib3ds/mesh.h>
+#include <lib3ds/node.h>
+
+
+#include "LgPoint3.hpp"
+#include "LgPoint2.hpp"
+
+#include "ClassKdTree.h"
+#include "accelerators/kdtreeaccel.h"
+
+
+#define COUT_SUB 1000000
+#define BLACK    "\033[1;30m"
+#define RED      "\033[1;31m"
+#define GREEN    "\033[1;32m"
+#define YELLOW   "\033[1;33m"
+#define BLUE     "\033[1;34m"
+#define PURPLE   "\033[1;35m"
+#define CYAN     "\033[1;36m"
+#define GREY     "\033[1;37m"
+#define DEFAULT_COLOR "\033[0;m"
+#include <map>
+
+using namespace std;
+
+struct MyFace{
+    uint16_t a, b, c;
+};
+
+
+struct strip{
+
+    vector<Lg::Point3d> v_pt; // On stocke dans l'ordre les points A,B,C,D d'un patch
+    unsigned int numero_strip;
+};
+
+struct MyMesh
+{
+    string nameBloc;
+    string name;
+    string nameBC;
+    string nameBS;
+    vector<Lg::Point3> pt;
+    vector<Lg::Point2> uv;
+    vector<MyFace> face;
+    uint16_t first_id;
+    vector<strip> v_strip;
+
+};
+
+
+class Modele_Bati3D
+{
+
+
+public :
+
+   std::vector<Reference<Primitive>>  m_vref_triangle;       // Contient tous les triangles des facades et des toits (Format pour Ray-tracing)
+   std::vector<KdTreeTriangleP*> m_vp_triangle;
+   std::vector<Reference<Primitive>> m_vref_triangle_patch;  //Contient tous les triangles des strips et des toits  (Format pour Ray-tracing)
+   std::vector<KdTreeTriangleP*> m_vp_triangle_patch;
+
+   std::map<std::string,Lg::Point3d> m_map_facade_normale;
+
+
+
+
+
+   Lg::Point3d m_pivot_BATI3D;                               // Point pivot du fichier 3DS
+   double m_largeur_strip;
+
+   Modele_Bati3D(Lib3dsFile *file,const Lg::Point3d & pivot_bati3D=Lg::Point3d(), const double & largeur_strip=1.5);
+   MyMesh CreateMesh(Lib3dsMesh *mesh, string nameBC,string nameBS, string nameBloc);
+   void MeshNode(Lib3dsFile *f, Lib3dsNode *node, vector<MyMesh> & v_mesh);
+
+
+private :
+
+    unsigned int m_numero_bande;
+    vector<MyMesh> v_mesh;
+
+};
+
+
+#endif
+
+
+
 #include "ModeleBati3D.h"
 
 Modele_Bati3D::Modele_Bati3D(Lib3dsFile *file,const Lg::Point3d & pivot_bati3D, const double & largeur_strip) : m_pivot_BATI3D(pivot_bati3D), m_largeur_strip(largeur_strip) {
