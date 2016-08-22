@@ -1,0 +1,96 @@
+       
+            
+    std::vector<double> v_normaliseX;
+    std::vector<double> v_normaliseY;
+    std::vector<double> v_normaliseZ;
+
+    assert(m_NbreEvenement > 0);
+    for(int k=0 ; k<(m_NbreEvenement-1) ; ++k){
+
+        auto const& ek1 = m_AccEvent.Event(k+1);
+        auto const& ek = m_AccEvent.Event(k);
+
+        const double dt=ek1.m_time - ek.m_time;
+
+        v_normaliseX.push_back(facteur_normalisation(amplification_y*para/*ek.m_eastPositionRMSError*/,amplification_y*para/*ek1.m_eastPositionRMSError*/,0.007/*ek.m_eastVelocityRMSError*/,dt));
+        v_normaliseY.push_back(facteur_normalisation(amplification_x*para/*ek.m_northPositionRMSError*/,amplification_x*para/*ek1.m_northPositionRMSError*/,0.007/*ek.m_northVelocityRMSError*/,dt));
+        v_normaliseZ.push_back(facteur_normalisation(amplification_z*ek1.m_downPositionRMSError,amplification_z*ek1.m_downPositionRMSError,ek.m_downVelocityRMSError,dt));
+
+    }
+
+    for(int i=0 ; i<m_NbreEvenement; ++i){
+
+        auto const& event_i = m_AccEvent.Event(i);
+
+        const double & cxi = carre(amplification_y*para/*event_i.m_eastPositionRMSError*/);
+        const double & cyi = carre(amplification_x*para/*event_i.m_northPositionRMSError*/);
+        const double & czi = carre(amplification_z*event_i.m_downPositionRMSError);
+
+        m_covarianceX(i,i) = cxi; // Covariance 1D x
+        m_covarianceY(i,i) = cyi; // Covariance 1D y
+        m_covarianceZ(i,i) = czi; // Covariance 1D z
+
+        double normX =1.;
+        double normY = 1.;
+        double normZ= 1.;
+
+        for(int j=i+1 ; j<m_NbreEvenement; ++j){
+              // Construction matrice m_covarianceX
+            normX *= v_normaliseX[j-1];
+            m_covarianceX(i,j) = cxi *normX;
+            m_covarianceX(j,i) = m_covarianceX(i,j);
+              // Construction matrice m_covarianceY
+            normY *= v_normaliseY[j-1];
+            m_covarianceY(i,j) = cyi *normY ;
+            m_covarianceY(j,i) = m_covarianceY(i,j);
+
+             // Construction matrice m_covarianceZ
+            normZ*=v_normaliseZ[j-1];
+            m_covarianceZ(i,j) = czi *normZ  ;
+            m_covarianceZ(j,i)=m_covarianceZ(i,j);
+
+        }
+   }
+
+
+    // Construction matrice m_covariance et m_covarianceXY à l'aide des matrice 1D en x ,y et z
+     for(int i=0 ; i<m_NbreEvenement; ++i){
+           for(int j=i; j<m_NbreEvenement; ++j){
+
+               const double & Cx_ij=m_covarianceX(i,j);
+               const double & Cy_ij=m_covarianceY(i,j);
+               const double & Cz_ij=m_covarianceZ(i,j);
+
+               const unsigned int & k=i*3;
+               const unsigned int & p=j*3;
+
+               const unsigned int & I=i*2;
+               const unsigned int & J=j*2;
+
+               // covariance 2D
+               m_covarianceXY(I,J)=Cx_ij;
+               m_covarianceXY(I+1,J+1)=Cy_ij;
+
+
+               // covariance 3D
+               m_covariance(k,p)=Cx_ij;
+               m_covariance(k+1,p+1)=Cy_ij;
+               m_covariance(k+2,p+2)=Cz_ij;
+
+               if(i!=j){ // Matrice symétique
+
+                   m_covarianceXY(J,I)=Cx_ij;
+                   m_covarianceXY(J+1,I+1)=Cy_ij;
+
+
+                   m_covariance(p,k)=Cx_ij;
+                   m_covariance(p+1,k+1)=Cy_ij;
+                   m_covariance(p+2,k+2)=Cz_ij;
+               }
+
+         }
+    }
+     
+     
+    
+    return m_covarianceXY;}
