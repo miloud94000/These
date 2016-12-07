@@ -1,0 +1,599 @@
+%%
+%% Copyright 2011 Clement Mallet IGN Societe Francaise de 
+%% Photogrammetrie et de Teledetection
+%% ======================================================================
+%% WARNING! ENGLISH SPEAKING AUTHORS SHOULD READ rfpt_template_eng.tex
+%%          FILE INSTEAD
+%% ======================================================================
+
+\documentclass{rfpt}
+
+%% --------------------------------------------------------------
+%% FIGURES
+%% Pour des figures en PostScript dans votre article
+%% utilisez le paquet graphics pour de simples commandes
+%% \usepackage{graphics}
+%% ou le paquet graphicx pour des commandes plus compliquées
+%% \usepackage{graphicx}
+
+%% --------------------------------------------------------------
+%% BIBLIOGRAPHIE
+%% Merci de ne pas utiliser le package cleveref
+%% Le package natbib est utilise par defaut, et presente de nombreuses
+%% fonctionnalites. Vous pouvez par exemple vous referer ici
+%% http://merkel.zoneo.net/Latex/natbib.php?lang=fr
+
+%% --------------------------------------------------------------
+%% UTILISATION DE CARACTERES ACCENTUES AU CLAVIER ?
+%% (le codage du clavier depend du systeme d'exploitation)
+% \usepackage[applemac]{inputenc} % MacOS
+% \usepackage[ansinew]{inputenc}  % Windows ANSI
+% \usepackage[cp437]{inputenc}    % DOS, page de code 437
+% \usepackage[cp850]{inputenc}    % DOS, page de code 850
+% \usepackage[cp852]{inputenc}    % DOS, page de code 852
+% \usepackage[cp865]{inputenc}    % DOS, page de code 865
+%\usepackage[latin1]{inputenc}   % UNIX, codage ISO 8859-1
+% \usepackage[decmulti]{inputenc} % VMS
+% \usepackage[next]{inputenc}
+% \usepackage[latin2]{inputenc}
+% \usepackage[latin3]{inputenc}
+
+
+\usepackage{amssymb,amsthm}
+\usepackage{float}
+\usepackage[latin1]{inputenc} 
+\usepackage{amsmath} 
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% Titre, auteurs, affiliation & adresse
+
+%% Garder cet exemple
+%% \title{Titre}
+%% \author{Prénom Nom}
+%% \address{Affiliation + adresse}
+
+\title{RECALAGE CONJOINT DE DONNÉES LASER MOBILE SIMULÉES ET DE MODÈLES 3D DE VILLE}
+
+\author[A1]{Miloud Mezian}
+\author[A1]{Bahman Soheilian}
+\author[A1]{Bruno Vallet}
+\author[A1]{Nicolas Paparoditis}
+
+\address[A1]{IGN/SR, MATIS, Université Paris-Est, 73 avenue de Paris, 94160 Saint Mandé, France}
+
+\begin{resume}
+
+%Les avancées technologiques depuis de nombreuses années dans le domaine de la cartographie ont permis de mettre de tous des outils pratiques permettant la visualisation fine de l'environnement. 
+
+\end{resume}
+
+
+\begin{motscle}
+%% Les mots clés ici, séparés de la commande \sep
+Recalage conjoint \sep Données laser mobiles \sep Modèles 3D de ville \sep Incertitudes \end{motscle}
+
+\begin{abstract}
+%In this paper we present a complete pipeline to register 3D terrestrial LiDAR mobile synthetic data with high density point clouds (low precision when the signal is disturbed) and a 3D model with better overall accuracy but fewer details (larger 1 meter). The registration method proposed is a generic and efficient method. This article is based on a specific case of the Gauss-Helmert model [Manual of photogrammetry] without parameters and taking into account uncertainties regarding the two dataset in input. Even if several studies have analyzed the sources of uncertainties in Mobile Terretrial LiDAR System [Leslar et al.] it is not yet the case of the 3D model. It is a model of constraint between observations that is rarely investigated in the literature. The applications of such a registration is to enrich geographic databases, particularly in terms of accuracy, level of detail and diversity of represented objects and allow the data covisualization map. The method has been tested on the synthetic data. A computer vision technique based on a ray-tracer was used to create a synthetic data. This allows quick and easy production of synthetic data. Datasets for which a ground truth is known can also be produced. This is useful to ensure algorithms are behaving properly before moving to real dataset. We registered a mobile synthetic scan of a street of Paris of ... million laser points registered on a 3D building models of approximately ... triangles.
+\end{abstract}
+%%%%%%%%
+
+
+\begin{keyword}
+%% keywords here, in the form: keyword \sep keyword
+Registration \sep Mobile laser scans \sep 3D building models \sep Uncertainties
+\end{keyword}
+
+\end{frontmatter}
+%%%%%%%%%%%%
+\section{Introduction}
+%%%%%%%%%%%%
+\subsection{Contexte générale}
+
+Le laboratoire MATIS de l'institut national de l'information et forestière (IGN) travaille dans le domaine des sciences de l'information géographique et a pour but de décrire précisément la surface du territoire à grande échelle.\vspace{0.1cm}
+Pour cela, l'IGN s'est spécialisé dans le domaine de la cartographie, de l'imagerie (aérienne ou terrestre) et de la photogrammétrie depuis de nombreuses années. Il dispose aujourd'hui d'une quantité importante de données regroupant:
+ \vspace{0.1cm}
+\begin{itemize}
+\item[$\bullet$] des images satellitaires, aériennes et terrestres  
+ \vspace{0.1cm}
+\item[$\bullet$] des nuages de points laser terrestres fixes (TLS)
+ \vspace{0.1cm}
+\item[$\bullet$] des nuages de points laser terrestres mobiles (Mobile Terrestrial LiDAR System)
+ \vspace{0.1cm}
+\item[$\bullet$] des nuages de points laser aériens (Airborne LiDAR Systems) provenant des technologies "Light Detection And Ranging (LIDAR)"
+ \vspace{0.1cm}
+\item[$\bullet$] des modèles multi-dimensionnels 2D ou 3D nommés bases de données géographiques (BD).
+ \vspace{0.1cm}
+\end{itemize}
+
+
+L'ensemble de ces données provient de l'utilisation de différents capteurs à la pointe de la technologie. Ces capteurs scannent l'environnement selon :
+
+
+\begin{itemize}
+\item[$\bullet$] différents points de vues
+\item[$\bullet$] différents niveaux de détails ou résolutions
+\item[$\bullet$] différentes précisions spatiales
+\end{itemize}
+
+\vspace{0.1cm}
+Ces données hétérogènes disposent chacune de son propre géo-référencement et ses propres incertitudes de géolocalisation allant de quelques centimètres à quelques mètres. Elles permettent ainsi de construire des bases de données (BD) réalistes représentant l'environnement de la manière la plus fiable possible.
+
+\vspace{0.1cm}
+
+Le coeur de nos préoccupations, dans un cadre plus général, est le recalage de données hétérogènes entre elles, en particulier pour les applications suivantes:
+
+
+\begin{itemize}
+ \vspace{0.1cm}
+\item[$\bullet$] détecter des changements pour la mise à jour de bases de données géographiques
+\vspace{0.1cm}
+\item[$\bullet$] enrichir les bases de données géographiques existantes en augmentant significativement leur niveau de détail
+(géométrie et texturation fines)
+\vspace{0.1cm}
+\item[$\bullet$] recaler des données brutes entre elles pour que les informations qui en sont extraites soient directement exploitables dans un référentiel commun.
+
+\end{itemize}
+
+
+\subsection{Données mobiles terrestres}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\linewidth]{point.png}
+\caption{Données mobiles terrestres}
+\label{stereopolis}
+\end{figure}
+
+
+Le laboratoire Matis a développé depuis plusieurs années un véhicule de cartographie mobile
+nommé Stéréopolis II \citep{paparoditis} pour acquérir simultanément des données image et laser géo-référencées. Les données mobiles que nous avons utilisées ont été produites par le véhicule de cartographie mobile terrestre.\vspace{0.1cm}
+Le capteur laser est un RIEGL VQ-250 monté transversalement afin de balayer un plan orthogonal à la trajectoire. Il tourne à 100 Hz et émet 3000 impulsions par rotation, ce qui correspond à une résolution angulaire de 0,12 degré, ce qui donne 0 à 8 échos produisant une moyenne de 250 000 points par seconde.  Ce type de MTLS acquiert les données de manière linéaire dans deux directions de l'espace. La troisième dimension est obtenue par translation de la ligne d'acquisition directement liée à l'axe défini par le mouvement du véhicule. Le niveau de détail de ces acquisitions est accru par rapport à l'imagerie aérienne. Cet avantage a conduit à un essor rapide de ce type de systèmes au cours de ces dernières années.
+
+Le système de géo-positionnement d'un véhicule de cartographie mobile se compose généralement
+
+\begin{itemize}
+\vspace{0.1cm}
+\item[$\bullet$] \textbf{d'un système GPS} permettant de capter la position avec une précision variable en fonction des conditions d'acquisition et du système allant de quelques mètres à moins de 10 cm
+\vspace{0.1cm}
+\item[$\bullet$] \textbf{d'un odomètre} mesurant la distance parcourue par le véhicule
+\vspace{0.1cm}
+\item[$\bullet$] \textbf{d'une centrale inertielle (INS)} composée d'accéléromètres
+mesurant l'accélération du véhicule, de gyromètres
+mesurant l'accélération angulaire et de magnétomètres
+pour obtenir à tout instant la position du nord géographique dont la précision dépendant du système utilisé.
+\end{itemize}
+\vspace{0.1cm}
+Les données issues de ces capteurs sont intégrées afin de déduire la position précise du véhicule à chaque instant. Cependant, ce géo-référencement peut-être perturbé par:
+
+\begin{itemize}
+\item[$\bullet$] \textbf{les trajets multiples :} le capteur GPS reçoit plusieurs fois le même signal, soit directement, soit indirectement (reflété par des façades par exemple) ce qui le perturbe
+\vspace{0.1cm}
+\item[$\bullet$] \textbf{les masques GPS :} la portion de ciel visible est trop
+faible et le capteur ne voit plus assez de satellites pour en déduire sa position.
+\end{itemize}
+\vspace{0.1cm}
+
+Ces perturbations entraînent une erreur absolue sur
+l'estimation de la trajectoire du véhicule. Cette perturbation induit en général un écart qui peut atteindre plusieurs mètres dans le cas d'un masque GPS de plusieurs minutes. Dans cet article, nous appelons dérive cet écart entre la trajectoire fournie par le système de géo-positionnement et la trajectoire réelle. Le recalage effectué va chercher à estimer cet écart. La dérive dépend fortement de la qualité des données de positionnement mais aussi de l'algorithme d'intégration des données des capteurs de positionnement, et doit donc être considérée comme non linéaire en fonction du temps. L'utilisation d'une centrale inertielle de bonne qualité garantit cependant une variation très lente de la dérive ainsi qu'une très bonne orientation du véhicule. Les dérives sont donc principalement composées de dérives lentes en translation. C'est sur ces deux hypothèses que se base notre recalage et en particulier notre modèle de dérive.
+
+\textbf{Formule de géoréferencement des coordonnées d'un point laser}
+
+Dans la littérature, le calcul des coordonnées d'un point laser à partir d'un MTLS est bien documenté \citep{ellum2002land}. Comme le montre la figure (1), les coordonnées des points $\textbf{P}_i$ dans le repère monde (repère absolue)  peuvent être calculées en combinant les informations des mesures LiDAR, INS et de calibration.
+
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1.0\linewidth]{voiturearticle1.png}
+\caption{Géo-référencement des données mobiles}
+\label{stereopolis}
+\end{figure}
+
+La formule de géoférencement d'un point Lidar est donnée par l'équation :
+
+\begin{equation}
+\textbf{P}_{i}^{} (t)=  \textbf{R}_{\textbf{INS}}^{\textbf{m}}(t)~ \textbf{P}_i^{\textbf{INS}}(t) +\textbf{T}_{i}^{}(t)
+\label{di}
+\end{equation}
+
+ou : 
+\begin{itemize}
+\item[$\bullet$] $\textbf{P}_{i}^{}(t)$ représente les coordonnées 3D d'un point dans le repère monde (système de coordonnées East-North-Up) au temps t et i est l'indice du point.
+\vspace{0.1cm}
+\item[$\bullet$]  $\textbf{T}_{i}^{}(t)$ est la position du véhicule (ou INS) dans le repère monde au temps t.
+\vspace{0.1cm}
+\item[$\bullet$]  $\textbf{R}_{\textbf{INS}}^{\textbf{m}}(t)$ est la rotation entre le repère INS et monde au temps t :
+
+\begin{equation}
+\textbf{R}_{\textbf{INS}}^{\textbf{m}}(t)=\textbf{R}_{\textbf{NED}}^{\textbf{ENU}}.
+ \textbf{R}(\theta_{\textbf{z}}(t),\theta_{\textbf{y}}(t),\theta_{\textbf{x}}(t))
+\label{}
+\end{equation}
+\begin{itemize}
+
+\vspace{0.15cm}
+ \item $\textbf{R}_{\textbf{NED}}^{\textbf{ENU}}$ est la rotation constante entre les systèmes de coordonnées North-East-Down et East-North-Up dans le repère monde.
+ \vspace{0.1cm}
+\item $ \textbf{R} \textbf{(}\theta_{\textbf{z}},\theta_{\textbf{y}},\theta_{\textbf{x}}\textbf{)} $ est la matrice de rotation entre le repère INS et le repère monde (système de coordonnées North-East-Down) avec $\theta_{\textbf{x}}$, $\theta_{\textbf{y}}$, $\theta_{\textbf{z}}$ les angles d'Euler roll, pitch and yaw fournit par la centrale inertielle au temps t
+\end{itemize}
+\vspace{0.15cm}
+
+\item[$\bullet$]  $\textbf{P}_{i}^{\textbf{INS}}(t)$ est la position du point dans le repère INS au temps t.
+
+\vspace{0.1cm}
+\begin{equation}
+\textbf{P}_i^{\textbf{INS}}(t)= \textbf{R}_{\textbf{c}}(\Omega,\varphi,\kappa)~\textbf{P}_i^{\textbf{LiDAR}}(t)+ \textbf{T}_{\textbf{LiDAR}}^{\textbf{INS}}
+\label{ref3}
+\end{equation}
+\end{itemize}
+
+\begin{itemize}
+\vspace{0.15cm}
+\item $\textbf{R}_{\textbf{c}}(\Omega,\varphi,\kappa)$ est la rotation constante dans le temps entre le repère LiDAR et INS. $\kappa$, $\varphi$ et $\Omega$  sont les angles de calibration.
+\vspace{0.15cm}
+\item $\textbf{T}_{\textbf{LiDAR}}^{\textbf{INS}}$ le vecteur de l'origine du repère INS vers l'origine du repère LiDAR.
+\vspace{0.15cm}
+\item $\textbf{P}_i^{\textbf{LiDAR}}(t)$ est le point dans le repère laser au temps t :
+
+\begin{equation}
+\textbf{P}_{i}^{\textbf{LiDAR}}(t) =\overbrace{\begin{bmatrix} X_0^{\textbf{LiDAR}}(t) \\ Y_0^{\textbf{LiDAR}}(t) \\ Z_0^{\textbf{LiDAR}}(t) \end{bmatrix}}^{\textbf{P}_{\textbf{0}}^{\textbf{LiDAR}}(t)}+    r(t) \overbrace{\begin{bmatrix} cos(\theta(t)) ~ sin(\varphi(t))\\  sin(\theta(t)) ~ sin(\varphi(t)) \\ cos(\varphi(t)) \end{bmatrix}}^{\textbf{u}_{\textbf{Laser}}(t)}
+\end{equation}
+
+\begin{itemize}
+\item $\textbf{P}_{\textbf{0}}^{\textbf{LiDAR}}(t) : $ représente le centre du miroir laser au temps t (Figure \ref{laser}).
+\item $\textbf{u}_{\textbf{Laser}}(t) : $
+
+
+\item $ r(t) :$ est la longueur du rayon laser au temps t ( Figure \ref{laser}).
+\item $\theta (t)$, $\varphi (t):$ représentent les angles horizontaux et verticaux mesurés par le LiDAR dans le repère du  scanner laser au temps t (Figure 2).
+\end{itemize}
+
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{Laser.png}
+\caption{(1) Centre du repère scanner laser C - (2) Le centre du miroir du LiDAR $\textbf{P}_{\textbf{0}}^{\textbf{LiDAR}}$ }
+\label{laser}
+\end{figure}
+
+L'équation (\ref{di}) montre que les coordonnées d'un point $\textbf{P}_i^{}$ dans le repère monde dépend de 18 paramètres issue de la géométrie d'acquisition du MTLS.
+
+\subsection{Modèle géométrique 3D de ville}
+
+
+Dans cet article, nous appelons modèle géométrique 3D  de ville une base de données constituée de primitives géométriques triangulaires (Figure \ref{modele3D}). 
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.20]{modele3D.png}
+\caption{Modèle géométrique 3D de ville constitué de primitives triangulaires. Bleu : toits des bâtiments, gris : façades des bâtiments. }
+\label{modele3D}
+\end{figure}
+
+La figure \ref{structure} illustre l'organisation de la structure de la BD du modèle géométrique 3D de ville.
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.8]{diagramme1.png}
+\caption{Schéma simplifié de l'organisation de la structure de la BD du modèle 3D de ville. }
+\label{structure}
+\end{figure}
+
+Le modèle 3D présente un faible niveau de détail (de l'ordre du mètre) mais une précision géographique plus homogène que les données mobiles terrestres.
+
+
+
+
+
+
+\subsection{Problématique}
+
+Le travail présente ici s'intéresse plus particulièrement au problème de recalage automatique entre des nuages de points laser synthétiques et des modèles géométrique 3D de ville avec une prise en compte globale des incertitudes entre les deux entités concernées.
+\vspace{0.1cm}
+
+\textbf{Intérets des données simulées numériquement}
+
+L'intérêt est :
+\begin{itemize}
+\item[$\bullet$] avoir une vérité terrain
+ \vspace{0.05cm}
+\item[$\bullet$] mettre en oeuvre et évaluer l'efficacité du modèle de recalage
+ \vspace{0.05cm}
+\item[$\bullet$] permettre de mieux appréhender le fonctionnement du recalage
+ \vspace{0.05cm}
+\item[$\bullet$] valider notre modèle mathématique permettant de minimiser la distance entre les données (optimisation)
+ \vspace{0.05cm}
+\item[$\bullet$] valider la précision du recalage pour de futur recalages sur des données réelles.
+\end{itemize}
+
+\vspace{0.1cm}
+
+Pour résumer, nous travaillons sur des données simulées numériquement afin de travailler sur des jeux de données complétement contrôlés. En effet, effectuer une évaluation sur des données présentant un niveau de détail si différent peut engendrer des difficultés d'interprétation des résultats. Nous proposons donc de créer des données simplifiées, des nuages de points laser synthétiques créés à partir de la géométrie d'acquisition du MTLS grâce à un premier lancé de rayons. La création d'un nuage de points synthétiques permet d'obtenir le même niveau de détails que notre BD. Nous nous assurons par la suite que le nuage synthétique possède l'ensemble de ces points sur les primitives triangulaires de la BD. Ce nuage synthétique nous servira de \textbf{vérité terrain}.
+
+
+
+\section{Etat de l'art du recalage 3D}
+
+
+
+\section{Création d'un nuage de points laser synthétique}
+Nous utilisons dans cet article la géométrie d'acquisition, la trajectoire réelle du véhicule de cartographie mobile et un modèle géométrique 3D de ville pour créer des nuages de points laser synthétiques parfaitement positionné sur le modèle 3D.
+
+
+\vspace{0.1cm}
+\begin{figure*}
+\centering
+\includegraphics[scale=0.33]{Ray.png}
+\caption{Création d'un nuage de points laser synthétiques à partir de la trajectoire réelle, la géométrie d'acquisition du véhicule et un modèle 3D de ville}
+\label{}
+\end{figure*}
+
+La création de ce type de nuage est relativement simple. Nous utilisons un lancé de rayons sur les primitives triangulaires des façades de la BD grâce à la librairie PBRT. Pour chaque point de la trajectoire du véhicule nous disposons des informations suivantes :
+
+\begin{itemize}
+\item[$\bullet$] la position du centre C du repère laser au temps $t_i$ (la source d'émission du rayon)
+ \vspace{0.05cm}
+\item[$\bullet$] le vecteur directeur unitaire $\vec{\textbf{u}_{laser}(t)}$ du rayon laser représentant la direction du rayon.
+\end{itemize}
+
+et pour chaque primitive géométrique du modèle 3D de ville nous connaissons la normale de la façade $\vec{\textbf{n}_{facade_j}}$.
+
+
+
+ \vspace{0.1cm}
+A chaque pas de temps $t_i$ de la trajectoire, un rayon est lancé dans la scène. Si celui-ci intersecte des primitives géométriques triangulaires, la plus proche est sélectionnée. Si la condition des compatibilités des normales :
+
+
+\begin{equation}
+\vec{\textbf{n}_{facade_j}}.\vec{{\textbf{u}_{laser}(t)}} < 0
+\label{di1}
+\end{equation}
+de \citep{2012ISPAn..I3...99D} est remplie, l'intersection entre le rayon et la primitive en question définit un point $\textbf{P}_{i}'$ (Figure \ref{raytracing}). Cette condition permet de ne garder que les points appartenant aux façades extérieur des modèles 3D. Nous noterons r'(t) la distance séparant le point $\textbf{P}_{i}'$ et la position du centre C au temps $t_i$. L'équation d'un point $\textbf{P'}_{i}^{} (t)$ du nuage laser synthétique  dans le repère monde s'écrit comme suit :
+
+\begin{equation}
+\textbf{P'}_{i}^{} (t)=  \textbf{R}_{\textbf{INS}}^{\textbf{m}}(t)~ \textbf{P'}_i^{\textbf{INS}}(t) +\textbf{T}_{i}^{}(t)
+\label{di}
+\end{equation}
+ 
+avec 
+\vspace{0.1cm}
+\begin{equation}
+\textbf{P'}_i^{\textbf{INS}}(t)= \textbf{R}_{\textbf{c}}(\Omega,\varphi,\kappa)~\textbf{P'}_i^{\textbf{LiDAR}}(t)+ \textbf{T}_{\textbf{LiDAR}}^{\textbf{INS}}
+\label{ref3}
+\end{equation}
+
+et 
+\begin{equation}
+\textbf{P'}_{i}^{\textbf{LiDAR}}(t) =\overbrace{\begin{bmatrix} X_0^{\textbf{LiDAR}}(t) \\ Y_0^{\textbf{LiDAR}}(t) \\ Z_0^{\textbf{LiDAR}}(t) \end{bmatrix}}^{\textbf{P}_{\textbf{0}}^{\textbf{LiDAR}}(t)}+    r'(t) \overbrace{\begin{bmatrix} cos(\theta(t)) ~ sin(\varphi(t))\\  sin(\theta(t)) ~ sin(\varphi(t)) \\ cos(\varphi(t)) \end{bmatrix}}^{\textbf{u}_{\textbf{Laser}}(t)}
+\end{equation}
+
+
+\begin{figure}[h!]
+\centering
+\includegraphics[scale=0.38]{raytracing2.png}
+\caption{étape de création d'un nuage de points laser synthétiques par lancé de rayons et une base de donnée. L'intersection entre les rayons lancés depuis la trajectoire du véhicule et les primitives triangulaires de la base de données définit un nouveau point laser
+parfaitement positionné sur la primitive considérée.}
+\label{raytracing}
+\end{figure}
+
+Au final, le nuage laser synthétique créé possède pour chaque point intersecté les mêmes informations que le
+nuage original. Seul le nombre de points constituant le nouveau nuage change car certains points laser
+n'ont pas intersecté de primitives triangulaires dans la BD et la position spatiale des nouveaux points $\textbf{P'}_{i}(t)$ est modifiée
+(position de l'intersection au lieu de la position du point originel).
+
+\section{Déformation de la trajectoire du véhicule et du modèle de ville 3D}
+
+Aprés avoir créer un nuage de points laser synthétique (vérité terrain) nous allons aborder la déformation ou la perturbation de nos données pour pouvoir ensuite procéder au recalage des données.
+ 
+\subsection{Déformation de la trajectoire du v?hicule}
+
+
+
+
+
+\subsection{Déformation du modèle 3D de ville}
+
+Le principal enjeu du choix d'un modèle de d'information du modèle 3D de ville est la gestion de la topologie. Les intersections
+de surfaces représentent l'ensemble des inter-connexions spatiales entre les différentes entités
+constitutives de la BD. Un bâtiment est constitué de murs connectés en leurs angles. La topologie de
+nos modèles 3D de ville est présente à deux niveaux :
+\begin{itemize}
+\item[$\bullet$] \textbf{intra-bâtiment :} si l'on décide de bouger un mur, il faut décider comment on répercute la transformation sur les murs adjacents,
+\item[$\bullet$] \textbf{inter-bâtiment :} les bâtiments eux-mêmes présentent des adjacences le long de faces communes ce qui soulève le même problème.
+\end{itemize}
+
+Nous avons fait le choix d'un modèle de déformation simple. Il s'agit de mettre :
+
+\begin{itemize}
+\item[$\bullet$] \textbf{une translation 2D par bloc de bâtiments} pour traiter le problème globale de géo-référencement (Figure \ref{struct}).
+\item[$\bullet$] \textbf{une translation 2D par façade} le long de la normale $\vec{\textbf{n}_{facade_j}}$ pour modéliser l'écart entre la limite de gouttière et le plan de façade (Figure \ref{struct}).
+\item[$\bullet$] \textbf{une translation 2D par bande} pour modéliser le relief des façades (Figure \ref{struct}).
+\end{itemize}
+
+\vspace{0.1cm}
+\begin{figure}
+\centering
+\includegraphics[scale=0.40]{structurebloc.png}
+\caption{Schéma simplifié illustrant un bloc de bâtiments, une façade et des bandes.}
+\label{struct}
+\end{figure}
+
+
+
+
+\section{Recalage automatique des données avec une prise en compte globale des incertitudes}
+
+
+\subsection{Incertitudes sur les modèles géométrique 3D de ville}
+
+Les principales incertitudes présentes dans la base de données proviennent :
+
+\begin{itemize}
+\item[$\bullet$] des résidus d'ajustements de faisceau sur l'orientation des images utilis?es pour créer la base de données
+\item[$\bullet$] des différentes saisies manuelles par les opérateurs
+\item[$\bullet$] la limite des bâtiments dans la BD provient de la saisie des bâtiments dans les images. En aérien, cette saisie se fait au niveau des gouttiéres,
+lesquelles ne sont pas forcément alignées avec les plans porteurs des façades
+\item[$\bullet$] de l'algorithme de reconstruction 3D lui-même qui peut présenter des erreurs.
+\end{itemize}
+
+
+
+
+
+\subsection{Incertitudes sur les données mobiles terrestre}
+
+En général, les sources d'incertitudes du scanner laser mobile terrestre sont divisées en trois catégories :
+
+\begin{itemize}
+ \vspace{0.1cm}
+\item[$\bullet$] \textbf{incertitudes de navigation :} Elles comprennent les incertitudes de la position absolue et l'orientation du véhicule mesurées par l'INS en temps réel. Les facteurs qui influe sur la précision de la position du véhicule sont : les multi-trajets, les masques GPS causée par les bâtiments et les arbres. Dans de bonnes conditions GPS cette incertitude est d'environ quelques centimètres, cependant elle peut atteindre plusieurs mètre quand le signal GPS est perturbé. Dans \cite{leslar2014error}, ils ont prouvé que dans des conditions d'erreur étroitement contrôles, la source d'incertitude dans le nuage de points est dominée par la position du véhicule.
+ \vspace{0.1cm}
+\item[$\bullet$] \textbf{Incertitudes de calibration :} à savoir les incertitudes de translation et de rotation entre le repère scanner laser et l'INS. La qualité des paramètres de calibration est habituellement connue et dépend de la procédure de calibration \citep{le2014new,rieger2010boresight}.
+ \vspace{0.1cm}
+\item[$\bullet$] \textbf{Incertitudes du scanner laser :} les mesures du scanner laser est composé de deux angles et d'une distance. Les facteurs qui affectent la précision de la position cible du laser sont nombreux, tels que la température (humidité, température), les propriétés de la surface balayée (rugosité, réflectivité), la géométrie de balayage (angle d'incidence de surface) et la précision du mécanisme du scanner (décalage du centre du miroir) \citep{soudarissanane2008reducing}. Ces incertitudes sont évaluées par les constructeurs.
+\end{itemize}
+
+\begin{figure}
+\centering
+\includegraphics[scale=0.19]{incertitude_points.png}
+\caption{}
+\label{}
+\end{figure}
+
+\subsubsection{ \textbf{Positions et vitesses du véhicule de cartographie mobile} }
+\label{sec:pospeed}
+
+Le véhicule de cartographie mobile fournit également des positions $T_i$ et vitesses $\dot{T}_i$ approximatives et des incertitudes $\sigma_i^T$ et $\sigma_i^T$ de sorte que les positions et vitesses réelles peuvent être modéliser par des variables aléatoires $T_i+\Delta_i$ et $\dot{T}_i+\dot{\Delta}_i$ où $\Delta_i$ est une variable gaussienne centrée d'écart-type $\sigma_i$. Les $\Delta_i$ ne sont évidemment pas des variables aléatoires indépendantes car le système utilise les accélérations mesurées par l'INS pour estimer les positions. Nous aimerions donc calculer leurs covariances. Un modèle simple est $\Delta_{i+1}=\Delta_i+\dot{\Delta}_i dt$ mais cela conduit à une variance incohérente pour $\Delta_{i+1}$ :
+$$ Var(\Delta_{i+1}) = \sigma_{i+1}^2 \quad Var(\Delta_i+\dot{\Delta}_i dt) = \sigma_i^2 + dt^2\dot{\sigma}_i^2 $$
+
+Ainsi, notre meilleure hypothèse pour exploiter l'information sur la vitesse pour obtenir des informations sur la covariance est de normaliser afin d'obtenir une variance consistante : $$ \Delta_{i+1}=n_i(\Delta_i+\dot{\Delta}_i dt) \quad n_i = \sqrt{\frac{\sigma_{i+1}^2}{\sigma_i^2 + dt^2\dot{\sigma}_i^2}} $$
+De sorte qu'en supposant que  $\Delta_i$ et $\dot{\Delta}_i$ soient indépendants, la covariance entre $\Delta_i$ et $\Delta_{i+1}$ est:
+$$ cov(\Delta_i, \Delta_{i+1}) = E(\Delta_i \Delta_{i+1}) = \sigma_i^2 n_i $$
+Nous pouvons vérifier les deux limites:
+$$ \lim_{\dot{\sigma}_i \to 0} \sigma_i^2 n_i =
+\sigma_i^2 \frac{\sigma_{i+1}}{\sigma_i}
+= \sigma_i \sigma_{i+1}
+\quad \lim_{\dot{\sigma}_i \to +\infty} \sigma_i^2 n_i = 0 $$
+Pour les variables non adjacentes, ceci se généralise à :
+\begin{equation}
+\label{eq:trajecto_cov}
+ cov(\Delta_i, \Delta_{j}) = \sigma^2_i \prod_{k=i}^{j-1} n_k
+\end{equation}
+
+
+\subsection{Méthode générale du problème optimisation}
+
+Pour recaler nos données entre elles, nous utilisons une méthode d'optimisation rarement utilisées dans la littérature du recalage. Il s'agit d'une méthode générique découlant d'un cas particulier de la méthode de Gauss-Helmert présenté par \citep{opac-b1129039} p.87 et consiste en la résolution du système d'équations suivant: 
+
+\begin{equation}
+\mathbf{g}(\mathbf{\hat{l}})= \mathbf{0} ~~~or~~~\mathbf{g}(\mathbf{l+\hat{v}})=0
+\label{ref4}
+\end{equation}
+
+C'est un modèle de contraintes entre les observations seulement : G contraintes $\boldsymbol{g}_g$ parmi N observations $\boldsymbol{l}_n$ ou $\boldsymbol{\hat{l}}=\boldsymbol{l}+\boldsymbol{\hat{v}}$ est le vecteur d'observation estimé. La forme de l'équation(\ref{ref4}) est donnée dans l'équation (\ref{refh6}):
+
+
+\begin{equation}
+\textbf{B}^{\textbf{t}} \boldsymbol{\hat{v}}= \textbf{c}_{g}
+\label{refh6}
+\end{equation}
+
+\begin{equation}
+\textbf{c}_{g}=\textbf{g}(\boldsymbol{\hat{l}}^{~(\textbf{0})} )-\textbf{B}^{\textbf{t}} (\boldsymbol{l}-\boldsymbol{\hat{l}}^{\textbf{~(0)}})
+\label{ref61}
+\end{equation}
+
+
+ou  $\textbf{B}_{N \times G}=\left.(\dfrac{\partial \textbf{F}}{\partial \textbf{l}}\right|_{\textbf{l}^{\textbf{(0)}}})^{\textbf{t}} $ est la matrice des dérivées partielles par rapport aux observations, $\textbf{c}_{g}$ est le vecteur des erreurs, $\textbf{l}^{(\textbf{0})}$ sont les valeurs initiales, $\boldsymbol{\hat{v}}$ sont les résidus d'observations. Les quantités \textbf{B} et $\textbf{c}_{g}$ sont connues, alors que  $\boldsymbol{\hat{v}}$ est inconnue. Le vecteur de correction des observations $\boldsymbol{\hat{r}}$ est : 
+
+
+\begin{equation}
+\boldsymbol{\hat{v}} = -\mathbf{C}_{\mathbf{ll}} \mathbf{B} \mathbf{M} \mathbf{c}_{g}
+\end{equation}
+ou la matrice de variance-covariance:
+\begin{equation}
+\label{eq:modelCcov}
+\mathbf{C}_{\hat{v}\hat{v}} = \mathbf{C}_{ll} \mathbf{B} \mathbf{M} \mathbf{B}^t \mathbf{C}_{ll}
+\end{equation}
+
+ou $\textbf{M}=( \textbf{B} \textbf{C}_{\textbf{r}} \textbf{B}^{\textbf{T}}  )^{\textbf{-1}}$ et $\textbf{C}_{\textbf{ll}}$ la matrice de covariances observations.
+\subsection{Gauss-Helmert pour le recalage laser/mod?le 3D}
+
+Nous disposons d'un laser scanner mobile avec une trajectoire (positions et vitesses) suivant le modèle mathématique de la section \ref{sec:pospeed} et un modèle 3D géométrique définit par des façades verticales rectangulaires elles-mêmes définies par un point $\textbf{Q}_f$ et une normale $\mathbf{n}_f$. Les façades sont regroupées dans des blocs de bâtiments
+$b(f)$ avec $b$ l'indice du bloc et $f$ l'indice de la façade.
+
+\vspace{0.1cm} 
+
+Dans ce contexte, les observations du modèle de Gauss-Helmert $\mathbf{l}$ sont la trajectoire et le modèle 3D , c'est à dire :
+
+\begin{itemize}
+\item $\textbf{T}$ une translation 2D $\mathbf{t}_i=(t_x,t_y)_b^t$ en chaque point de la trajectoire $T_i$. La matrice de covariance $\mathbf{C}_{t_xt_x}$ et $\mathbf{C}_{t_yt_y}$  pour $t_x$ et $t_y$ peut être calculée sur la base de l'équation \ref{eq:trajecto_cov}.
+\item $\textbf{B}$ une translation 2D (horizontale) par bloc $\mathbf{d}_b = (d_x,d_y)_b^t$. Il s'agit de variables gaussiennes indépendantes de variance  $\sigma_b$. Leurs matrices de covariance sont $\mathbf{C}_{d_xd_x}=\mathbf{C}_{d_yd_y}=\sigma_b^2 Id$
+\item $\textbf{N}$ un offset (horizontal) 2D $o_f$ le long de la normale $\mathbf{n}^f$ par façade. Il s'agit de variables gaussiennes indépendantes de variance $\sigma_f$ ou la matrice de covariance est  $\mathbf{C}_{nn}=\sigma_n^2 Id$
+\item $\textbf{S}$ un offset (horizontal) 2D $s_s$ le long de la normal $\mathbf{n}^{f(s)}$, pour chaque point $\mathbf{p} _p$ apparié à une façade $f$. Il s'agit de variables gaussiennes indépendantes de variance $\sigma_p$ ou la matrice de covariance est  $\mathbf{C}_{pp}=\sigma_p^2 Id$
+\end{itemize}
+
+\begin{figure*}
+\centering
+\includegraphics[scale=0.28]{articlebatiment2.png}
+\caption{Incertitude du modèle 3D de ville a) }
+\label{fig:short}
+\end{figure*}
+
+Nous avons à présent un vecteur des observations : $$\hat{\mathbf{v}}=(t_x^0,...,t_x^n,t_y^0,...,t_y^n,d_x^0,...,d_x^n,d_y^0,...,d_y^n,n_0,...,n_N,p_0,...p_P)$$
+
+Le vecteur concaténant les translations $\hat{\mathbf{v}}$, et $\mathbf{C}_{ll}$ la matrice de variance-covariance des observations, qui est bloc diagonal avec les blocs $\mathbf{C}_{t_xt_x},\mathbf{C}_{t_yt_y},\mathbf{C}_{d_xd_x},\mathbf{C}_{d_yd_y}$, $\mathbf{C}_{nn}$ et $\mathbf{C}_{pp}$.
+
+Alors pour chaque point nous avons une contrainte de la forme :
+\begin{equation}
+\label{eq:modelA}
+g_s(\hat{\mathbf{v}}) =
+\sum_{\mathbf{p} \in E_s} d(\mathbf{p}(\mathbf{t}_i), F_{f(s)}) 
+\end{equation}
+
+\begin{equation}
+\label{eq:modelE}
+=
+\sum_{\mathbf{p} \in E_s} (Q_{f(s)}+\mathbf{d}_{b(f(s))} - \mathbf{p}(\mathbf{t}_i)).\mathbf{n}_{f(s)} + o_{f(s)} + s_s= 0
+\end{equation}
+
+
+Il s'agit d'un modèle Gauss-Helmert sans paramètres, avec $2T+2B+N+S$ observations et $S$ contraintes.
+La solution est donnée à nouveau par :
+
+\begin{equation}
+\label{eq:modelD}
+\hat{\mathbf{v}} = C_{ll}\mathbf{B}(\mathbf{B}^t \mathbf{C}_{ll} \mathbf{B})^{-1} \mathbf{c}_g 
+\end{equation}
+
+ou :
+
+\begin{equation}
+\label{eq:modelC}
+\mathbf{c}_g =  -g(0) - \mathbf{B}^t \hat{\mathbf{v}}
+\quad \mathbf{B}=\left( \frac{\partial g_s}{\partial \hat{\mathbf{v}}} \right)^t
+\end{equation}
+
+avec pour matrice de covariance :
+
+\begin{equation}
+\label{eq:modelCcov}
+\mathbf{C}_{\hat{v}\hat{v}} = \mathbf{C}_{ll} \mathbf{B}(\mathbf{B}^t \mathbf{C}_{ll} \mathbf{B})^{-1}\mathbf{B}^t \mathbf{C}_{ll}
+\end{equation}
+
+
+
+\section{Résultats et perspectives}
+\section{Conclusion}
+\bibliographystyle{rfpt_fr}
+\bibliography{biblio}
+
+\end{document}
+
+%%
+%% End of file `rfpt_template.tex'.
